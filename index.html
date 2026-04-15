@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>RPGプラットフォーム | ヒトノヒカリ合同会社</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DotGothic16&family=Noto+Sans+JP:wght@400;700&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0a0a1a;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      overflow: hidden;
+      font-family: 'Noto Sans JP', 'Hiragino Kaku Gothic ProN', sans-serif;
+    }
+    #game-container {
+      position: relative;
+      touch-action: none;
+    }
+    canvas {
+      display: block;
+      image-rendering: pixelated;
+    }
+
+    /* ========== タイトル画面 ========== */
+    #title-screen {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: linear-gradient(135deg, #0a0a2e 0%, #1a1a4e 50%, #0a2a3e 100%);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+      animation: titleFadeIn 1s ease-out;
+    }
+    @keyframes titleFadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    #title-screen .logo {
+      font-family: 'DotGothic16', monospace;
+      font-size: clamp(28px, 5vw, 48px);
+      color: #ffd700;
+      text-shadow: 0 0 20px rgba(255, 215, 0, 0.5), 0 2px 4px rgba(0,0,0,0.8);
+      margin-bottom: 8px;
+      letter-spacing: 4px;
+    }
+    #title-screen .subtitle {
+      font-size: clamp(13px, 2.5vw, 18px);
+      color: #8ab4f8;
+      margin-bottom: 6px;
+      letter-spacing: 2px;
+    }
+    #title-screen .concept {
+      font-size: clamp(11px, 2vw, 14px);
+      color: #aaa;
+      margin-bottom: 50px;
+      text-align: center;
+      line-height: 1.8;
+    }
+    #title-screen .start-btn {
+      font-family: 'DotGothic16', monospace;
+      font-size: 20px;
+      color: #fff;
+      background: linear-gradient(135deg, #4169e1, #6a5acd);
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 30px;
+      padding: 14px 50px;
+      cursor: pointer;
+      letter-spacing: 3px;
+      transition: all 0.3s;
+      animation: pulse 2s infinite;
+    }
+    #title-screen .start-btn:hover {
+      background: linear-gradient(135deg, #5179f1, #7a6aed);
+      transform: scale(1.05);
+    }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 10px rgba(65,105,225,0.5); }
+      50% { box-shadow: 0 0 25px rgba(65,105,225,0.8); }
+    }
+    #title-screen .company {
+      position: absolute;
+      bottom: 30px;
+      color: #555;
+      font-size: 12px;
+      letter-spacing: 1px;
+    }
+    .stars {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .star {
+      position: absolute;
+      width: 2px; height: 2px;
+      background: #fff;
+      border-radius: 50%;
+      animation: twinkle 3s infinite;
+    }
+    @keyframes twinkle {
+      0%, 100% { opacity: 0.2; }
+      50% { opacity: 1; }
+    }
+
+    /* ========== HUD ========== */
+    #hud {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 50px;
+      background: linear-gradient(180deg, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0) 100%);
+      display: none;
+      align-items: center;
+      padding: 8px 16px;
+      z-index: 100;
+      gap: 16px;
+    }
+    #hud .player-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    #hud .player-avatar {
+      width: 32px; height: 32px;
+      background: #4169e1;
+      border-radius: 50%;
+      border: 2px solid #ffd700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+    }
+    #hud .player-name {
+      color: #fff;
+      font-size: 13px;
+      font-weight: bold;
+    }
+    #hud .player-level {
+      color: #ffd700;
+      font-size: 11px;
+    }
+    #hud .exp-bar-container {
+      flex: 1;
+      max-width: 200px;
+      height: 8px;
+      background: rgba(255,255,255,0.15);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    #hud .exp-bar {
+      height: 100%;
+      width: 30%;
+      background: linear-gradient(90deg, #4169e1, #00bfff);
+      border-radius: 4px;
+      transition: width 0.5s ease;
+    }
+    #hud .exp-label {
+      color: #8ab4f8;
+      font-size: 10px;
+    }
+    #hud .quest-count {
+      margin-left: auto;
+      color: #aaa;
+      font-size: 12px;
+    }
+    #hud .quest-count span {
+      color: #ffd700;
+      font-weight: bold;
+    }
+
+    /* ========== UIオーバーレイ ========== */
+    #ui-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      pointer-events: none;
+      z-index: 100;
+      display: none;
+    }
+    #interact-btn {
+      pointer-events: auto;
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, rgba(65,105,225,0.85), rgba(106,90,205,0.85));
+      border: 2px solid rgba(255,255,255,0.4);
+      color: white;
+      font-size: 13px;
+      font-weight: bold;
+      font-family: 'Noto Sans JP', sans-serif;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      box-shadow: 0 2px 10px rgba(65,105,225,0.4);
+      transition: transform 0.15s;
+      z-index: 201;
+    }
+    #interact-btn:active {
+      transform: scale(0.9);
+    }
+    #controls-hint {
+      pointer-events: none;
+      position: fixed;
+      bottom: 100px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: white;
+      font-size: 12px;
+      background: rgba(0,0,0,0.7);
+      padding: 6px 16px;
+      border-radius: 20px;
+      transition: opacity 1s;
+      white-space: nowrap;
+    }
+
+    /* ========== ダイアログ ========== */
+    #dialog-box {
+      pointer-events: auto;
+      position: fixed;
+      bottom: 100px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: min(90%, 480px);
+      background: rgba(10, 10, 30, 0.95);
+      border: 2px solid rgba(138, 180, 248, 0.5);
+      border-radius: 10px;
+      padding: 16px 20px;
+      color: white;
+      display: none;
+      animation: slideUp 0.2s ease-out;
+    }
+    @keyframes slideUp {
+      from { transform: translateX(-50%) translateY(10px); opacity: 0; }
+      to { transform: translateX(-50%) translateY(0); opacity: 1; }
+    }
+    #dialog-name {
+      color: #ffd700;
+      font-size: 14px;
+      font-weight: bold;
+      margin-bottom: 6px;
+    }
+    #dialog-message {
+      font-size: 14px;
+      line-height: 1.7;
+      white-space: pre-wrap;
+    }
+    #dialog-close-hint {
+      text-align: right;
+      color: #666;
+      font-size: 11px;
+      margin-top: 8px;
+    }
+
+    /* ========== クエストパネル ========== */
+    #quest-panel {
+      pointer-events: auto;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: min(92%, 460px);
+      max-height: 80vh;
+      overflow-y: auto;
+      background: rgba(15, 15, 35, 0.97);
+      border: 2px solid #ffd700;
+      border-radius: 12px;
+      padding: 24px;
+      color: white;
+      display: none;
+      animation: scaleIn 0.25s ease-out;
+    }
+    @keyframes scaleIn {
+      from { transform: translate(-50%, -50%) scale(0.9); opacity: 0; }
+      to { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+    }
+    #quest-panel h2 {
+      color: #ffd700;
+      font-size: 18px;
+      text-align: center;
+      margin-bottom: 18px;
+      font-family: 'DotGothic16', monospace;
+    }
+    .quest-item {
+      background: rgba(42, 42, 78, 0.6);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .quest-item:hover {
+      background: rgba(65, 105, 225, 0.3);
+      border-color: rgba(65,105,225,0.5);
+      transform: translateX(4px);
+    }
+    .quest-name {
+      font-size: 15px;
+      font-weight: bold;
+    }
+    .quest-desc {
+      font-size: 12px;
+      color: #aaa;
+      margin-top: 3px;
+    }
+    .quest-level {
+      color: #ffd700;
+      font-size: 13px;
+      font-weight: bold;
+      font-family: 'DotGothic16', monospace;
+    }
+    #quest-close-hint {
+      text-align: center;
+      color: #666;
+      font-size: 11px;
+      margin-top: 14px;
+    }
+
+    /* ========== クエスト詳細画面 ========== */
+    #quest-detail {
+      pointer-events: auto;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: min(92%, 500px);
+      max-height: 85vh;
+      overflow-y: auto;
+      background: rgba(15, 15, 35, 0.97);
+      border: 2px solid #4169e1;
+      border-radius: 12px;
+      padding: 24px;
+      color: white;
+      display: none;
+      animation: scaleIn 0.25s ease-out;
+    }
+    #quest-detail h3 {
+      color: #8ab4f8;
+      font-size: 16px;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    #quest-detail .quest-content {
+      font-size: 14px;
+      line-height: 1.8;
+      margin-bottom: 20px;
+      color: #ddd;
+    }
+    #quest-detail .quiz-section {
+      background: rgba(42, 42, 78, 0.5);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    #quest-detail .quiz-question {
+      font-size: 14px;
+      font-weight: bold;
+      margin-bottom: 12px;
+      color: #ffd700;
+    }
+    .quiz-option {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin-bottom: 8px;
+      color: #fff;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: 'Noto Sans JP', sans-serif;
+    }
+    .quiz-option:hover {
+      background: rgba(65, 105, 225, 0.3);
+      border-color: rgba(65,105,225,0.5);
+    }
+    .quiz-option.correct {
+      background: rgba(39, 174, 96, 0.4);
+      border-color: #27ae60;
+    }
+    .quiz-option.wrong {
+      background: rgba(231, 76, 60, 0.4);
+      border-color: #e74c3c;
+    }
+
+    /* ========== クリア演出 ========== */
+    #quest-complete {
+      pointer-events: auto;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      display: none;
+      z-index: 300;
+      animation: completeIn 0.5s ease-out;
+    }
+    @keyframes completeIn {
+      from { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+      to { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+    }
+    #quest-complete .complete-badge {
+      font-size: 60px;
+      margin-bottom: 12px;
+    }
+    #quest-complete .complete-text {
+      font-family: 'DotGothic16', monospace;
+      font-size: 28px;
+      color: #ffd700;
+      text-shadow: 0 0 20px rgba(255,215,0,0.6);
+      margin-bottom: 8px;
+    }
+    #quest-complete .complete-exp {
+      font-size: 16px;
+      color: #8ab4f8;
+      margin-bottom: 20px;
+    }
+    #quest-complete .complete-btn {
+      background: linear-gradient(135deg, #4169e1, #6a5acd);
+      border: none;
+      border-radius: 20px;
+      padding: 10px 30px;
+      color: white;
+      font-size: 14px;
+      cursor: pointer;
+      font-family: 'Noto Sans JP', sans-serif;
+    }
+    #quest-complete-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.7);
+      display: none;
+      z-index: 299;
+    }
+
+    /* ========== デバッグ ========== */
+    #debug-info {
+      pointer-events: none;
+      position: fixed;
+      top: 55px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #ffd700;
+      font-size: 12px;
+      font-family: monospace;
+      background: rgba(0,0,0,0.8);
+      padding: 4px 12px;
+      border-radius: 4px;
+      display: none;
+      z-index: 200;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- タイトル画面 -->
+  <div id="title-screen">
+    <div class="stars" id="stars-container"></div>
+    <div class="logo">RPGプラットフォーム</div>
+    <div class="subtitle">〜 ロール・プレイング・学習 〜</div>
+    <div class="concept">
+      ゲーム感覚で楽しみながら学べて<br>
+      生きていくための力が身に付く
+    </div>
+    <button class="start-btn" id="start-btn">▶ はじめる</button>
+    <div class="company">ヒトノヒカリ合同会社</div>
+  </div>
+
+  <!-- ゲーム本体 -->
+  <div id="game-container"></div>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div class="player-info">
+      <div class="player-avatar">🧑</div>
+      <div>
+        <div class="player-name">冒険者</div>
+        <div class="player-level">Lv.1</div>
+      </div>
+    </div>
+    <div class="exp-bar-container">
+      <div class="exp-bar" id="exp-bar"></div>
+    </div>
+    <div class="exp-label" id="exp-label">EXP 0/100</div>
+    <div class="quest-count">クエスト <span id="quest-cleared">0</span>/4</div>
+  </div>
+
+  <!-- UIオーバーレイ -->
+  <div id="ui-overlay">
+    <button id="interact-btn">調べる</button>
+    <div id="controls-hint">矢印キーで移動 ／ 「調べる」 or スペースキーで調べる</div>
+    <div id="debug-info"></div>
+
+    <!-- ダイアログ -->
+    <div id="dialog-box">
+      <div id="dialog-name"></div>
+      <div id="dialog-message"></div>
+      <div id="dialog-close-hint">▼ クリックで閉じる</div>
+    </div>
+
+    <!-- クエストボード -->
+    <div id="quest-panel">
+      <h2>📋 クエストボード</h2>
+      <div id="quest-list"></div>
+      <div id="quest-close-hint">クリックで閉じる</div>
+    </div>
+
+    <!-- クエスト詳細 -->
+    <div id="quest-detail">
+      <h3 id="quest-detail-title"></h3>
+      <div class="quest-content" id="quest-detail-content"></div>
+      <div class="quiz-section">
+        <div class="quiz-question" id="quiz-question"></div>
+        <div id="quiz-options"></div>
+      </div>
+    </div>
+
+    <!-- クリア演出 -->
+    <div id="quest-complete-overlay"></div>
+    <div id="quest-complete">
+      <div class="complete-badge">⭐</div>
+      <div class="complete-text">QUEST CLEAR!</div>
+      <div class="complete-exp" id="complete-exp-text">+30 EXP</div>
+      <button class="complete-btn" id="complete-close-btn">OK</button>
+    </div>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
