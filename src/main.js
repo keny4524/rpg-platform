@@ -2,10 +2,18 @@ import { AUTO, Scale, Scene, Game } from 'phaser';
 import { generateTileset, generateCharacter, generateQuestBoard, generateNPC, generateExclamationMark } from './generate-assets.js';
 import { mapData, MAP_WIDTH, MAP_HEIGHT, TILE_SIZE, SCALE, COLLISION_TILES, PLAYER_START, QUEST_BOARD_POS, NPC_POSITIONS, TILE_TEXTURES } from './map-data.js';
 import { quests } from './quest-data.js';
+import { registerPlayer, loginPlayer, loadProgress, saveProgress } from './supabase.js';
 
 // ========== HTML要素の参照 ==========
 const titleScreen = document.getElementById('title-screen');
 const startBtn = document.getElementById('start-btn');
+const loginScreen = document.getElementById('login-screen');
+const authTitle = document.getElementById('auth-title');
+const nicknameInput = document.getElementById('nickname-input');
+const passwordInput = document.getElementById('password-input');
+const authError = document.getElementById('auth-error');
+const authSubmitBtn = document.getElementById('auth-submit-btn');
+const authToggleBtn = document.getElementById('auth-toggle-btn');
 const hud = document.getElementById('hud');
 const uiOverlay = document.getElementById('ui-overlay');
 const interactBtn = document.getElementById('interact-btn');
@@ -34,6 +42,9 @@ let playerExp = 0;
 let playerLevel = 1;
 let clearedQuests = new Set();
 let sceneRef = null;
+let currentPlayerId = null;
+let currentNickname = '';
+let isRegisterMode = true;
 
 // ========== タイトル画面の星を生成 ==========
 const starsContainer = document.getElementById('stars-container');
@@ -142,6 +153,11 @@ function showQuestComplete(quest) {
   questCompleteOverlay.style.display = 'block';
   questComplete.style.display = 'block';
   updateHUD();
+
+  // 進捗をサーバーに保存
+  if (currentPlayerId) {
+    saveProgress(currentPlayerId, playerLevel, playerExp, Array.from(clearedQuests));
+  }
 }
 
 function closeAllUI() {
@@ -362,32 +378,119 @@ class RPGScene extends Scene {
   }
 }
 
-// ========== タイトル画面 → ゲーム開始 ==========
+// ========== ゲーム起動関数 ==========
+function startGame() {
+  loginScreen.style.display = 'none';
+  hud.style.display = 'flex';
+  uiOverlay.style.display = 'block';
+
+  // HUDにプレイヤー名を表示
+  document.querySelector('#hud .player-name').textContent = currentNickname;
+  updateHUD();
+
+  const config = {
+    type: AUTO,
+    parent: 'game-container',
+    width: window.innerWidth,
+    height: window.innerHeight,
+    pixelArt: true,
+    backgroundColor: '#1a1a2e',
+    scene: [RPGScene],
+    scale: {
+      mode: Scale.RESIZE,
+      autoCenter: Scale.CENTER_BOTH,
+    },
+  };
+
+  const game = new Game(config);
+  window.addEventListener('resize', () => {
+    game.scale.resize(window.innerWidth, window.innerHeight);
+  });
+}
+
+// ========== タイトル画面 → ログイン画面 ==========
 startBtn.addEventListener('click', () => {
   titleScreen.style.opacity = '0';
   titleScreen.style.transition = 'opacity 0.5s';
   setTimeout(() => {
     titleScreen.style.display = 'none';
-    hud.style.display = 'flex';
-    uiOverlay.style.display = 'block';
-
-    const config = {
-      type: AUTO,
-      parent: 'game-container',
-      width: window.innerWidth,
-      height: window.innerHeight,
-      pixelArt: true,
-      backgroundColor: '#1a1a2e',
-      scene: [RPGScene],
-      scale: {
-        mode: Scale.RESIZE,
-        autoCenter: Scale.CENTER_BOTH,
-      },
-    };
-
-    const game = new Game(config);
-    window.addEventListener('resize', () => {
-      game.scale.resize(window.innerWidth, window.innerHeight);
-    });
+    loginScreen.style.display = 'flex';
+    nicknameInput.focus();
   }, 500);
+});
+
+// ========== 登録/ログイン切り替え ==========
+authToggleBtn.addEventListener('click', () => {
+  isRegisterMode = !isRegisterMode;
+  authError.textContent = '';
+  if (isRegisterMode) {
+    authTitle.textContent = '冒険者登録';
+    authSubmitBtn.textContent = '登録してはじめる';
+    authToggleBtn.textContent = 'ログインする';
+  } else {
+    authTitle.textContent = 'おかえりなさい！';
+    authSubmitBtn.textContent = 'ログイン';
+    authToggleBtn.textContent = '新規登録する';
+  }
+});
+
+// ========== 登録/ログイン実行 ==========
+authSubmitBtn.addEventListener('click', async () => {
+  const nickname = nicknameInput.value.trim();
+  const password = passwordInput.value;
+
+  // バリデーション
+  if (!nickname) {
+    authError.textContent = 'ニックネームを入力してください';
+    return;
+  }
+  if (password.length < 4) {
+    authError.textContent = 'パスワードは4文字以上にしてください';
+    return;
+  }
+
+  authSubmitBtn.disabled = true;
+  authSubmitBtn.textContent = '接続中...';
+  authError.textContent = '';
+
+  if (isRegisterMode) {
+    // 新規登録
+    const result = await registerPlayer(nickname, password);
+    if (result.error) {
+      authError.textContent = result.error;
+      authSubmitBtn.disabled = false;
+      authSubmitBtn.textContent = '登録してはじめる';
+      return;
+    }
+    currentPlayerId = result.player.id;
+    currentNickname = nickname;
+  } else {
+    // ログイン
+    const result = await loginPlayer(nickname, password);
+    if (result.error) {
+      authError.textContent = result.error;
+      authSubmitBtn.disabled = false;
+      authSubmitBtn.textContent = 'ログイン';
+      return;
+    }
+    currentPlayerId = result.player.id;
+    currentNickname = nickname;
+
+    // 進捗を読み込む
+    const progress = await loadProgress(currentPlayerId);
+    playerLevel = progress.level;
+    playerExp = progress.exp;
+    clearedQuests = new Set(progress.clearedQuests);
+  }
+
+  // ゲーム開始
+  startGame();
+});
+
+// Enterキーでも送信
+passwordInput.addEventListener('keydown', (e) => {
+  if (e.code === 'Enter') authSubmitBtn.click();
+});
+nicknameInput.addEventListener('keydown', (e) => {
+  if (e.code === 'Enter') passwordInput.focus();
 });
