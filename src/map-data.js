@@ -5,8 +5,8 @@
 
 export const MAP_WIDTH = 30;
 export const MAP_HEIGHT = 20;
-export const TILE_SIZE = 16;
-export const SCALE = 3;
+export const TILE_SIZE = 32;
+export const SCALE = 2;
 
 // マップレイアウト — RPGの村っぽいフィールド
 export const mapData = [
@@ -44,8 +44,8 @@ export const QUEST_BOARD_POS = { x: 9, y: 6 };
 
 // NPCの位置
 export const NPC_POSITIONS = [
-  { x: 3, y: 4, name: '村長', message: 'ようこそ、冒険者よ！\nこの村で学びの冒険を始めよう。' },
-  { x: 20, y: 4, name: '学者', message: 'クエストボードで\n挑戦を見つけるといい。' },
+  { x: 3, y: 4, name: '長老エルダ', message: 'ようこそ、若き冒険者よ！\nこの「学びの庭」で\n生きる力を身につけるのだ。' },
+  { x: 20, y: 4, name: '魔導師セレナ', message: '知識は最強の魔法よ。\nクエストボードで\n冒険を見つけてごらんなさい。' },
 ];
 
 // タイルのテクスチャ名マッピング
