@@ -1,6 +1,5 @@
 /**
  * LPC素材ベースのアセット読み込み
- * 画像ファイルを使用 — プログラム生成から移行
  */
 
 export function preloadAssets(scene) {
@@ -10,120 +9,100 @@ export function preloadAssets(scene) {
   scene.load.image('water', 'assets/tile-water.png');
   scene.load.image('wall', 'assets/tile-tree.png');
   scene.load.image('flower', 'assets/tile-flower.png');
-  scene.load.image('building', 'assets/tile-grass2.png'); // 仮: 建物タイル
+  scene.load.image('building', 'assets/tile-grass2.png');
 
-  // プレイヤー (64x64, 9 frames x 4 directions)
-  scene.load.spritesheet('hero-walk', 'assets/hero-walk.png', {
-    frameWidth: 64,
-    frameHeight: 64,
-  });
-  scene.load.spritesheet('hero-idle', 'assets/hero-idle.png', {
+  // プレイヤー walk spritesheet (576x256 = 9 cols x 4 rows, 64x64 per frame)
+  scene.load.spritesheet('hero', 'assets/hero-walk.png', {
     frameWidth: 64,
     frameHeight: 64,
   });
 
-  // NPC (64x64, 9 frames x 4 directions)
-  scene.load.spritesheet('npc-walk', 'assets/npc-mage-walk.png', {
-    frameWidth: 64,
-    frameHeight: 64,
-  });
-  scene.load.spritesheet('npc-idle', 'assets/npc-mage-idle.png', {
+  // NPC walk spritesheet
+  scene.load.spritesheet('npc', 'assets/npc-mage-walk.png', {
     frameWidth: 64,
     frameHeight: 64,
   });
 }
 
 export function createAnimations(scene) {
-  // LPC spritesheet layout:
-  // Row 0 (frames 0-8): Walk Up
-  // Row 1 (frames 9-17): Walk Left
-  // Row 2 (frames 18-26): Walk Down
-  // Row 3 (frames 27-35): Walk Right
-  // Frame 0 of each row is the idle/standing pose
+  // LPC walk spritesheet layout (each row = direction, 9 frames):
+  // Row 0 (frames 0-8): Up    — frame 0 is standing
+  // Row 1 (frames 9-17): Left — frame 9 is standing
+  // Row 2 (frames 18-26): Down — frame 18 is standing
+  // Row 3 (frames 27-35): Right — frame 27 is standing
 
-  // Hero walk animations
+  // Hero walk animations (frames 1-8 for each direction = walking cycle)
   scene.anims.create({
     key: 'hero-walk-up',
-    frames: scene.anims.generateFrameNumbers('hero-walk', { start: 1, end: 8 }),
-    frameRate: 10,
-    repeat: -1,
+    frames: scene.anims.generateFrameNumbers('hero', { start: 1, end: 8 }),
+    frameRate: 10, repeat: -1,
   });
   scene.anims.create({
     key: 'hero-walk-left',
-    frames: scene.anims.generateFrameNumbers('hero-walk', { start: 10, end: 17 }),
-    frameRate: 10,
-    repeat: -1,
+    frames: scene.anims.generateFrameNumbers('hero', { start: 10, end: 17 }),
+    frameRate: 10, repeat: -1,
   });
   scene.anims.create({
     key: 'hero-walk-down',
-    frames: scene.anims.generateFrameNumbers('hero-walk', { start: 19, end: 26 }),
-    frameRate: 10,
-    repeat: -1,
+    frames: scene.anims.generateFrameNumbers('hero', { start: 19, end: 26 }),
+    frameRate: 10, repeat: -1,
   });
   scene.anims.create({
     key: 'hero-walk-right',
-    frames: scene.anims.generateFrameNumbers('hero-walk', { start: 28, end: 35 }),
-    frameRate: 10,
-    repeat: -1,
+    frames: scene.anims.generateFrameNumbers('hero', { start: 28, end: 35 }),
+    frameRate: 10, repeat: -1,
   });
 
-  // Hero idle frames (1 column x 4 rows: up=0, left=1, down=2, right=3)
-  // but idle sheet has 2 columns x 4 rows based on 128x256 size
+  // Hero idle (single frame = standing pose from walk sheet)
   scene.anims.create({
     key: 'hero-idle-up',
-    frames: [{ key: 'hero-idle', frame: 0 }],
+    frames: [{ key: 'hero', frame: 0 }],
     frameRate: 1,
   });
   scene.anims.create({
     key: 'hero-idle-left',
-    frames: [{ key: 'hero-idle', frame: 2 }],
+    frames: [{ key: 'hero', frame: 9 }],
     frameRate: 1,
   });
   scene.anims.create({
     key: 'hero-idle-down',
-    frames: [{ key: 'hero-idle', frame: 4 }],
+    frames: [{ key: 'hero', frame: 18 }],
     frameRate: 1,
   });
   scene.anims.create({
     key: 'hero-idle-right',
-    frames: [{ key: 'hero-idle', frame: 6 }],
+    frames: [{ key: 'hero', frame: 27 }],
     frameRate: 1,
   });
 
-  // NPC idle
+  // NPC idle (down-facing standing)
   scene.anims.create({
     key: 'npc-idle-down',
-    frames: [{ key: 'npc-idle', frame: 4 }],
+    frames: [{ key: 'npc', frame: 18 }],
     frameRate: 1,
   });
 }
 
-// クエストボードとエクスクラメーションマークはプログラム生成のまま
+// クエストボード
 export function generateQuestBoard(scene) {
   const g = scene.make.graphics({ add: false });
-  // 支柱
   g.fillStyle(0x5d3a1a); g.fillRect(10, 28, 4, 20);
   g.fillStyle(0x5d3a1a); g.fillRect(30, 28, 4, 20);
   g.fillStyle(0x6b4226); g.fillRect(11, 30, 2, 16);
   g.fillStyle(0x6b4226); g.fillRect(31, 30, 2, 16);
-  // 看板本体
   g.fillStyle(0xa07828); g.fillRect(4, 4, 36, 26);
-  // 枠
   g.fillStyle(0x6b4226); g.fillRect(4, 4, 36, 3);
   g.fillStyle(0x6b4226); g.fillRect(4, 27, 36, 3);
   g.fillStyle(0x6b4226); g.fillRect(4, 4, 3, 26);
   g.fillStyle(0x6b4226); g.fillRect(37, 4, 3, 26);
-  // 金装飾
   g.fillStyle(0xf1c40f); g.fillRect(4, 4, 3, 3);
   g.fillStyle(0xf1c40f); g.fillRect(37, 4, 3, 3);
   g.fillStyle(0xf1c40f); g.fillRect(4, 27, 3, 3);
   g.fillStyle(0xf1c40f); g.fillRect(37, 27, 3, 3);
-  // 貼り紙
   g.fillStyle(0xfaf0dc); g.fillRect(8, 8, 12, 8);
   g.fillStyle(0xfaf0dc); g.fillRect(24, 8, 12, 8);
   g.fillStyle(0xfaf0dc); g.fillRect(8, 18, 12, 8);
   g.fillStyle(0xe8dcc8); g.fillRect(24, 18, 12, 8);
-  // ピン
   g.fillStyle(0xe74c3c); g.fillRect(13, 8, 2, 2);
   g.fillStyle(0x3498db); g.fillRect(29, 8, 2, 2);
   g.fillStyle(0xf1c40f); g.fillRect(13, 18, 2, 2);

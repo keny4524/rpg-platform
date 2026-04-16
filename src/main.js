@@ -264,7 +264,7 @@ class RPGScene extends Scene {
   createPlayer() {
     const px = PLAYER_START.x * TILE_SIZE + TILE_SIZE / 2;
     const py = PLAYER_START.y * TILE_SIZE + TILE_SIZE / 2;
-    this.player = this.add.sprite(px, py, 'hero-idle', 4).setDepth(10); // frame 4 = idle down
+    this.player = this.add.sprite(px, py, 'hero', 18).setDepth(10); // frame 18 = standing down from walk sheet
     this.player.tileX = PLAYER_START.x;
     this.player.tileY = PLAYER_START.y;
   }
@@ -281,7 +281,7 @@ class RPGScene extends Scene {
     NPC_POSITIONS.forEach((npcData) => {
       const nx = npcData.x * TILE_SIZE + TILE_SIZE / 2;
       const ny = npcData.y * TILE_SIZE + TILE_SIZE / 2;
-      const npc = this.add.sprite(nx, ny, 'npc-idle', 4).setDepth(5); // frame 4 = idle down
+      const npc = this.add.sprite(nx, ny, 'npc', 18).setDepth(5); // frame 18 = standing down
       npc.npcData = npcData;
       this.npcs.push(npc);
       this.collisionMap[npcData.y][npcData.x] = true;
