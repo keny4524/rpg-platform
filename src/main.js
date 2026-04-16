@@ -1,5 +1,5 @@
 import { AUTO, Scale, Scene, Game } from 'phaser';
-import { generateTileset, generateCharacter, generateQuestBoard, generateNPC, generateExclamationMark } from './generate-assets.js';
+import { preloadAssets, createAnimations, generateQuestBoard, generateExclamationMark } from './generate-assets.js';
 import { mapData, MAP_WIDTH, MAP_HEIGHT, TILE_SIZE, SCALE, COLLISION_TILES, PLAYER_START, QUEST_BOARD_POS, NPC_POSITIONS, TILE_TEXTURES } from './map-data.js';
 import { quests } from './quest-data.js';
 import { registerPlayer, loginPlayer, loadProgress, saveProgress } from './supabase.js';
@@ -197,13 +197,17 @@ class RPGScene extends Scene {
     this.keysDown = {};
   }
 
+  preload() {
+    preloadAssets(this);
+  }
+
   create() {
     sceneRef = this;
 
-    generateTileset(this);
-    generateCharacter(this);
+    // アニメーション作成
+    createAnimations(this);
+    // プログラム生成素材
     generateQuestBoard(this);
-    generateNPC(this);
     generateExclamationMark(this);
 
     this.drawMap();
@@ -260,7 +264,7 @@ class RPGScene extends Scene {
   createPlayer() {
     const px = PLAYER_START.x * TILE_SIZE + TILE_SIZE / 2;
     const py = PLAYER_START.y * TILE_SIZE + TILE_SIZE / 2;
-    this.player = this.add.image(px, py, 'player_down').setDepth(10);
+    this.player = this.add.sprite(px, py, 'hero-idle', 4).setDepth(10); // frame 4 = idle down
     this.player.tileX = PLAYER_START.x;
     this.player.tileY = PLAYER_START.y;
   }
@@ -277,7 +281,7 @@ class RPGScene extends Scene {
     NPC_POSITIONS.forEach((npcData) => {
       const nx = npcData.x * TILE_SIZE + TILE_SIZE / 2;
       const ny = npcData.y * TILE_SIZE + TILE_SIZE / 2;
-      const npc = this.add.image(nx, ny, 'npc').setDepth(5);
+      const npc = this.add.sprite(nx, ny, 'npc-idle', 4).setDepth(5); // frame 4 = idle down
       npc.npcData = npcData;
       this.npcs.push(npc);
       this.collisionMap[npcData.y][npcData.x] = true;
@@ -315,8 +319,18 @@ class RPGScene extends Scene {
   }
 
   updatePlayerTexture() {
-    const t = { down: 'player_down', up: 'player_up', left: 'player_left', right: 'player_right' };
-    this.player.setTexture(t[this.facing]);
+    // 移動中はアニメーション再生、停止中はアイドル
+    if (this.isMoving) {
+      const walkAnim = `hero-walk-${this.facing}`;
+      if (this.player.anims.currentAnim?.key !== walkAnim) {
+        this.player.play(walkAnim);
+      }
+    } else {
+      const idleAnim = `hero-idle-${this.facing}`;
+      if (this.player.anims.currentAnim?.key !== idleAnim) {
+        this.player.play(idleAnim);
+      }
+    }
   }
 
   tryMove(dx, dy) {
