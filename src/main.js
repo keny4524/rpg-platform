@@ -1,6 +1,6 @@
 import { AUTO, Scale, Scene, Game } from 'phaser';
 import { preloadAssets, createAnimations, generateQuestBoard, generateExclamationMark } from './generate-assets.js';
-import { mapData, MAP_WIDTH, MAP_HEIGHT, TILE_SIZE, SCALE, COLLISION_TILES, PLAYER_START, QUEST_BOARD_POS, NPC_POSITIONS, TILE_TEXTURES } from './map-data.js';
+import { TILE_SIZE, SCALE, COLLISION_TILES, TILE_TEXTURES, areas, DEFAULT_AREA } from './map-data.js';
 import { quests } from './quest-data.js';
 import { registerPlayer, loginPlayer, loadProgress, saveProgress } from './supabase.js';
 
@@ -45,8 +45,9 @@ let sceneRef = null;
 let currentPlayerId = null;
 let currentNickname = '';
 let isRegisterMode = true;
+let currentAreaId = DEFAULT_AREA;
 
-// ========== タイトル画面の星を生成 ==========
+// ========== タイトル画面の星 ==========
 const starsContainer = document.getElementById('stars-container');
 for (let i = 0; i < 80; i++) {
   const star = document.createElement('div');
@@ -65,6 +66,15 @@ function updateHUD() {
   expLabel.textContent = `EXP ${playerExp}/${expForLevel}`;
   questCleared.textContent = clearedQuests.size;
   document.querySelector('#hud .player-level').textContent = `Lv.${playerLevel}`;
+}
+
+function updateAreaName(name) {
+  const el = document.getElementById('area-name');
+  if (el) {
+    el.textContent = name;
+    el.style.opacity = '1';
+    setTimeout(() => { el.style.opacity = '0.7'; }, 2000);
+  }
 }
 
 function buildQuestList() {
@@ -111,25 +121,17 @@ function handleQuizAnswer(quest, selectedIndex, btnEl) {
   const buttons = quizOptions.querySelectorAll('.quiz-option');
   const isCorrect = selectedIndex === quest.quiz.correctIndex;
 
-  // 全ボタンを無効化
   buttons.forEach((btn, i) => {
     btn.style.pointerEvents = 'none';
-    if (i === quest.quiz.correctIndex) {
-      btn.classList.add('correct');
-    }
+    if (i === quest.quiz.correctIndex) btn.classList.add('correct');
   });
+  if (!isCorrect) btnEl.classList.add('wrong');
 
-  if (!isCorrect) {
-    btnEl.classList.add('wrong');
-  }
-
-  // 1秒後にクリア演出 or リトライ
   setTimeout(() => {
     if (isCorrect) {
       questDetail.style.display = 'none';
       showQuestComplete(quest);
     } else {
-      // リセットして再挑戦
       buttons.forEach(btn => {
         btn.classList.remove('correct', 'wrong');
         btn.style.pointerEvents = 'auto';
@@ -141,20 +143,15 @@ function handleQuizAnswer(quest, selectedIndex, btnEl) {
 function showQuestComplete(quest) {
   clearedQuests.add(quest.id);
   playerExp += quest.exp;
-
-  // レベルアップ判定
   const expForLevel = playerLevel * 100;
   if (playerExp >= expForLevel) {
     playerExp -= expForLevel;
     playerLevel++;
   }
-
   completeExpText.textContent = `+${quest.exp} EXP`;
   questCompleteOverlay.style.display = 'block';
   questComplete.style.display = 'block';
   updateHUD();
-
-  // 進捗をサーバーに保存
   if (currentPlayerId) {
     saveProgress(currentPlayerId, playerLevel, playerExp, Array.from(clearedQuests));
   }
@@ -176,7 +173,6 @@ function closeAllUI() {
 dialogBox.addEventListener('click', closeAllUI);
 completeCloseBtn.addEventListener('click', closeAllUI);
 questCompleteOverlay.addEventListener('click', closeAllUI);
-
 document.getElementById('quest-close-hint').addEventListener('click', closeAllUI);
 
 // ========== Phaser シーン ==========
@@ -195,6 +191,13 @@ class RPGScene extends Scene {
     this.isQuestUIOpen = false;
     this.npcs = [];
     this.keysDown = {};
+    this.currentArea = null;
+    this.mapSprites = [];
+    this.npcSprites = [];
+    this.portalTiles = [];
+    this.questBoardSprite = null;
+    this.questExclamation = null;
+    this.isTransitioning = false;
   }
 
   preload() {
@@ -203,21 +206,12 @@ class RPGScene extends Scene {
 
   create() {
     sceneRef = this;
-
-    // アニメーション作成
     createAnimations(this);
-    // プログラム生成素材
     generateQuestBoard(this);
     generateExclamationMark(this);
 
-    this.drawMap();
-    this.createPlayer();
-    this.createQuestBoard();
-    this.createNPCs();
-
-    this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
-    this.cameras.main.setZoom(SCALE);
-    this.cameras.main.setBounds(0, 0, MAP_WIDTH * TILE_SIZE, MAP_HEIGHT * TILE_SIZE);
+    // エリアをロード
+    this.loadArea(currentAreaId);
 
     // キーボード入力
     window.addEventListener('keydown', (e) => {
@@ -225,9 +219,7 @@ class RPGScene extends Scene {
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
         e.preventDefault();
       }
-      if (e.code === 'Space') {
-        this.onInteract();
-      }
+      if (e.code === 'Space') this.onInteract();
     });
     window.addEventListener('keyup', (e) => {
       this.keysDown[e.code] = false;
@@ -236,61 +228,117 @@ class RPGScene extends Scene {
       this.keysDown = {};
     });
 
-    // HTMLボタン
     interactBtn.addEventListener('click', () => this.onInteract());
 
-    // 操作ヒントを5秒後にフェードアウト
     setTimeout(() => {
       controlsHint.style.opacity = '0';
-      setTimeout(() => controlsHint.remove(), 1000);
+      setTimeout(() => { if (controlsHint.parentNode) controlsHint.remove(); }, 1000);
     }, 5000);
 
     updateHUD();
   }
 
-  drawMap() {
+  loadArea(areaId, spawnX, spawnY) {
+    this.isTransitioning = true;
+    const area = areas[areaId];
+    if (!area) return;
+
+    currentAreaId = areaId;
+    this.currentArea = area;
+
+    // 既存スプライトをクリア
+    this.mapSprites.forEach(s => s.destroy());
+    this.mapSprites = [];
+    this.npcSprites.forEach(s => s.destroy());
+    this.npcSprites = [];
+    if (this.questBoardSprite) { this.questBoardSprite.destroy(); this.questBoardSprite = null; }
+    if (this.questExclamation) { this.questExclamation.destroy(); this.questExclamation = null; }
+
+    // マップ描画
     this.collisionMap = [];
-    for (let y = 0; y < MAP_HEIGHT; y++) {
+    this.portalTiles = [];
+    for (let y = 0; y < area.height; y++) {
       this.collisionMap[y] = [];
-      for (let x = 0; x < MAP_WIDTH; x++) {
-        const tileType = mapData[y][x];
+      for (let x = 0; x < area.width; x++) {
+        const tileType = area.map[y][x];
         const textureName = TILE_TEXTURES[tileType];
-        this.add.image(x * TILE_SIZE + TILE_SIZE / 2, y * TILE_SIZE + TILE_SIZE / 2, textureName).setDepth(0);
+        const tile = this.add.image(
+          x * TILE_SIZE + TILE_SIZE / 2,
+          y * TILE_SIZE + TILE_SIZE / 2,
+          textureName
+        ).setDepth(0);
+        this.mapSprites.push(tile);
         this.collisionMap[y][x] = COLLISION_TILES.includes(tileType);
       }
     }
-  }
 
-  createPlayer() {
-    const px = PLAYER_START.x * TILE_SIZE + TILE_SIZE / 2;
-    const py = PLAYER_START.y * TILE_SIZE + TILE_SIZE / 2;
-    this.player = this.add.sprite(px, py, 'hero', 18).setDepth(10); // frame 18 = standing down from walk sheet
-    this.player.tileX = PLAYER_START.x;
-    this.player.tileY = PLAYER_START.y;
-  }
+    // ポータルタイルは通行可能にする
+    if (area.portals) {
+      area.portals.forEach(p => {
+        if (p.y >= 0 && p.y < area.height && p.x >= 0 && p.x < area.width) {
+          this.collisionMap[p.y][p.x] = false;
+        }
+        this.portalTiles.push(p);
+      });
+    }
 
-  createQuestBoard() {
-    const qx = QUEST_BOARD_POS.x * TILE_SIZE + TILE_SIZE / 2;
-    const qy = QUEST_BOARD_POS.y * TILE_SIZE + TILE_SIZE / 2;
-    this.add.image(qx, qy, 'quest_board').setDepth(5);
-    const excl = this.add.image(qx, qy - 20, 'exclamation').setDepth(15);
-    this.tweens.add({ targets: excl, alpha: 0.3, duration: 600, yoyo: true, repeat: -1 });
-  }
+    // プレイヤー配置
+    const startX = spawnX !== undefined ? spawnX : area.playerStart.x;
+    const startY = spawnY !== undefined ? spawnY : area.playerStart.y;
 
-  createNPCs() {
-    NPC_POSITIONS.forEach((npcData) => {
-      const nx = npcData.x * TILE_SIZE + TILE_SIZE / 2;
-      const ny = npcData.y * TILE_SIZE + TILE_SIZE / 2;
-      const npc = this.add.sprite(nx, ny, 'npc', 18).setDepth(5); // frame 18 = standing down
-      npc.npcData = npcData;
-      this.npcs.push(npc);
-      this.collisionMap[npcData.y][npcData.x] = true;
-    });
-    this.collisionMap[QUEST_BOARD_POS.y][QUEST_BOARD_POS.x] = true;
+    if (!this.player) {
+      this.player = this.add.sprite(
+        startX * TILE_SIZE + TILE_SIZE / 2,
+        startY * TILE_SIZE + TILE_SIZE / 2,
+        'hero', 18
+      ).setDepth(10);
+    } else {
+      this.player.x = startX * TILE_SIZE + TILE_SIZE / 2;
+      this.player.y = startY * TILE_SIZE + TILE_SIZE / 2;
+    }
+    this.player.tileX = startX;
+    this.player.tileY = startY;
+
+    // カメラ
+    this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+    this.cameras.main.setZoom(SCALE);
+    this.cameras.main.setBounds(0, 0, area.width * TILE_SIZE, area.height * TILE_SIZE);
+
+    // クエストボード
+    if (area.questBoard) {
+      const qx = area.questBoard.x * TILE_SIZE + TILE_SIZE / 2;
+      const qy = area.questBoard.y * TILE_SIZE + TILE_SIZE / 2;
+      this.questBoardSprite = this.add.image(qx, qy, 'quest_board').setDepth(5);
+      this.questExclamation = this.add.image(qx, qy - 24, 'exclamation').setDepth(15);
+      this.tweens.add({ targets: this.questExclamation, alpha: 0.3, duration: 600, yoyo: true, repeat: -1 });
+      this.collisionMap[area.questBoard.y][area.questBoard.x] = true;
+    }
+
+    // NPC配置
+    this.npcs = [];
+    if (area.npcs) {
+      area.npcs.forEach((npcData) => {
+        const nx = npcData.x * TILE_SIZE + TILE_SIZE / 2;
+        const ny = npcData.y * TILE_SIZE + TILE_SIZE / 2;
+        const npc = this.add.sprite(nx, ny, 'npc', 18).setDepth(5);
+        npc.npcData = npcData;
+        this.npcs.push(npc);
+        this.npcSprites.push(npc);
+        this.collisionMap[npcData.y][npcData.x] = true;
+      });
+    }
+
+    // エリア名表示
+    updateAreaName(area.name);
+
+    // トランジション完了
+    this.isTransitioning = false;
+    this.isMoving = false;
+    this.updatePlayerTexture();
   }
 
   update(time, delta) {
-    if (this.isDialogOpen || this.isQuestUIOpen) return;
+    if (this.isDialogOpen || this.isQuestUIOpen || this.isTransitioning) return;
 
     if (this.isMoving) {
       this.moveProgress += delta / this.moveDuration;
@@ -299,6 +347,8 @@ class RPGScene extends Scene {
         this.player.x = this.moveTo.x;
         this.player.y = this.moveTo.y;
         this.updatePlayerTexture();
+        // ポータルチェック
+        this.checkPortal();
       } else {
         this.player.x = this.moveFrom.x + (this.moveTo.x - this.moveFrom.x) * this.moveProgress;
         this.player.y = this.moveFrom.y + (this.moveTo.y - this.moveFrom.y) * this.moveProgress;
@@ -319,7 +369,6 @@ class RPGScene extends Scene {
   }
 
   updatePlayerTexture() {
-    // 移動中はアニメーション再生、停止中はアイドル
     if (this.isMoving) {
       const walkAnim = `hero-walk-${this.facing}`;
       if (this.player.anims.currentAnim?.key !== walkAnim) {
@@ -334,9 +383,26 @@ class RPGScene extends Scene {
   }
 
   tryMove(dx, dy) {
+    const area = this.currentArea;
     const nx = this.player.tileX + dx;
     const ny = this.player.tileY + dy;
-    if (nx < 0 || nx >= MAP_WIDTH || ny < 0 || ny >= MAP_HEIGHT) return;
+
+    // ポータルの場合は範囲外でもOK（マップ端のポータル）
+    const portal = this.portalTiles.find(p => p.x === nx && p.y === ny);
+    if (portal) {
+      // ポータルに向かって移動 → 到達後にエリア切り替え
+      this.isMoving = true;
+      this.moveProgress = 0;
+      this.moveFrom.x = this.player.x;
+      this.moveFrom.y = this.player.y;
+      this.player.tileX = nx;
+      this.player.tileY = ny;
+      this.moveTo.x = nx * TILE_SIZE + TILE_SIZE / 2;
+      this.moveTo.y = ny * TILE_SIZE + TILE_SIZE / 2;
+      return;
+    }
+
+    if (nx < 0 || nx >= area.width || ny < 0 || ny >= area.height) return;
     if (this.collisionMap[ny][nx]) return;
 
     this.isMoving = true;
@@ -349,8 +415,17 @@ class RPGScene extends Scene {
     this.moveTo.y = ny * TILE_SIZE + TILE_SIZE / 2;
   }
 
+  checkPortal() {
+    const px = this.player.tileX;
+    const py = this.player.tileY;
+    const portal = this.portalTiles.find(p => p.x === px && p.y === py);
+    if (portal) {
+      this.loadArea(portal.target, portal.spawnX, portal.spawnY);
+    }
+  }
+
   onInteract() {
-    if (this.isMoving) return;
+    if (this.isMoving || this.isTransitioning) return;
 
     if (this.isDialogOpen || this.isQuestUIOpen) {
       closeAllUI();
@@ -360,24 +435,22 @@ class RPGScene extends Scene {
     const px = this.player.tileX;
     const py = this.player.tileY;
 
-    // デバッグ
-    debugInfo.textContent = `位置: (${px}, ${py})`;
-    debugInfo.style.display = 'block';
-    setTimeout(() => { debugInfo.style.display = 'none'; }, 2000);
-
-    // 周囲チェック
     for (let dy = -1; dy <= 1; dy++) {
       for (let dx = -1; dx <= 1; dx++) {
         const cx = px + dx;
         const cy = py + dy;
 
-        if (cx === QUEST_BOARD_POS.x && cy === QUEST_BOARD_POS.y) {
+        // クエストボード
+        if (this.currentArea.questBoard &&
+            cx === this.currentArea.questBoard.x &&
+            cy === this.currentArea.questBoard.y) {
           this.isQuestUIOpen = true;
           buildQuestList();
           questPanel.style.display = 'block';
           return;
         }
 
+        // NPC
         for (const npc of this.npcs) {
           if (cx === npc.npcData.x && cy === npc.npcData.y) {
             this.isDialogOpen = true;
@@ -392,13 +465,11 @@ class RPGScene extends Scene {
   }
 }
 
-// ========== ゲーム起動関数 ==========
+// ========== ゲーム起動 ==========
 function startGame() {
   loginScreen.style.display = 'none';
   hud.style.display = 'flex';
   uiOverlay.style.display = 'block';
-
-  // HUDにプレイヤー名を表示
   document.querySelector('#hud .player-name').textContent = currentNickname;
   updateHUD();
 
@@ -410,10 +481,7 @@ function startGame() {
     pixelArt: true,
     backgroundColor: '#1a1a2e',
     scene: [RPGScene],
-    scale: {
-      mode: Scale.RESIZE,
-      autoCenter: Scale.CENTER_BOTH,
-    },
+    scale: { mode: Scale.RESIZE, autoCenter: Scale.CENTER_BOTH },
   };
 
   const game = new Game(config);
@@ -422,7 +490,7 @@ function startGame() {
   });
 }
 
-// ========== タイトル画面 → ログイン画面 ==========
+// ========== タイトル → ログイン ==========
 startBtn.addEventListener('click', () => {
   titleScreen.style.opacity = '0';
   titleScreen.style.transition = 'opacity 0.5s';
@@ -433,7 +501,7 @@ startBtn.addEventListener('click', () => {
   }, 500);
 });
 
-// ========== 登録/ログイン切り替え ==========
+// ========== 登録/ログイン ==========
 authToggleBtn.addEventListener('click', () => {
   isRegisterMode = !isRegisterMode;
   authError.textContent = '';
@@ -448,27 +516,18 @@ authToggleBtn.addEventListener('click', () => {
   }
 });
 
-// ========== 登録/ログイン実行 ==========
 authSubmitBtn.addEventListener('click', async () => {
   const nickname = nicknameInput.value.trim();
   const password = passwordInput.value;
 
-  // バリデーション
-  if (!nickname) {
-    authError.textContent = 'ニックネームを入力してください';
-    return;
-  }
-  if (password.length < 4) {
-    authError.textContent = 'パスワードは4文字以上にしてください';
-    return;
-  }
+  if (!nickname) { authError.textContent = 'ニックネームを入力してください'; return; }
+  if (password.length < 4) { authError.textContent = 'パスワードは4文字以上にしてください'; return; }
 
   authSubmitBtn.disabled = true;
   authSubmitBtn.textContent = '接続中...';
   authError.textContent = '';
 
   if (isRegisterMode) {
-    // 新規登録
     const result = await registerPlayer(nickname, password);
     if (result.error) {
       authError.textContent = result.error;
@@ -479,7 +538,6 @@ authSubmitBtn.addEventListener('click', async () => {
     currentPlayerId = result.player.id;
     currentNickname = nickname;
   } else {
-    // ログイン
     const result = await loginPlayer(nickname, password);
     if (result.error) {
       authError.textContent = result.error;
@@ -489,22 +547,14 @@ authSubmitBtn.addEventListener('click', async () => {
     }
     currentPlayerId = result.player.id;
     currentNickname = nickname;
-
-    // 進捗を読み込む
     const progress = await loadProgress(currentPlayerId);
     playerLevel = progress.level;
     playerExp = progress.exp;
     clearedQuests = new Set(progress.clearedQuests);
   }
 
-  // ゲーム開始
   startGame();
 });
 
-// Enterキーでも送信
-passwordInput.addEventListener('keydown', (e) => {
-  if (e.code === 'Enter') authSubmitBtn.click();
-});
-nicknameInput.addEventListener('keydown', (e) => {
-  if (e.code === 'Enter') passwordInput.focus();
-});
+passwordInput.addEventListener('keydown', (e) => { if (e.code === 'Enter') authSubmitBtn.click(); });
+nicknameInput.addEventListener('keydown', (e) => { if (e.code === 'Enter') passwordInput.focus(); });
