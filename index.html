@@ -195,6 +195,117 @@
       margin: 4px 0;
     }
 
+    /* ========== キャラクター選択 ========== */
+    #character-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      display: none;
+      overflow-y: auto;
+      background: linear-gradient(135deg, #0a0a2e 0%, #1a1a4e 55%, #102a30 100%);
+      color: #fff;
+      padding: 32px 20px;
+    }
+    .character-select-inner {
+      width: min(100%, 980px);
+      min-height: calc(100vh - 64px);
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+    }
+    #character-screen h2 {
+      color: #ffd700;
+      font-family: 'DotGothic16', monospace;
+      font-size: 24px;
+      text-align: center;
+      margin-bottom: 8px;
+    }
+    .character-select-name {
+      color: #a8b9dc;
+      font-size: 13px;
+      margin-bottom: 22px;
+    }
+    #character-list {
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .character-card {
+      min-width: 0;
+      padding: 0;
+      overflow: hidden;
+      border: 2px solid rgba(255,255,255,0.18);
+      border-radius: 8px;
+      background: #f3f0ec;
+      color: #17182b;
+      cursor: pointer;
+      font-family: 'Noto Sans JP', sans-serif;
+      text-align: left;
+      transition: border-color 0.18s, transform 0.18s, box-shadow 0.18s;
+    }
+    .character-card:hover {
+      border-color: #8ab4f8;
+      transform: translateY(-2px);
+    }
+    .character-card.selected {
+      border-color: #ffd700;
+      box-shadow: 0 0 0 2px rgba(255,215,0,0.22), 0 10px 24px rgba(0,0,0,0.25);
+    }
+    .character-card img {
+      display: block;
+      width: 100%;
+      aspect-ratio: 2 / 3;
+      object-fit: cover;
+      object-position: top center;
+      background: #f3f0ec;
+    }
+    .character-card-info {
+      display: block;
+      min-height: 66px;
+      padding: 10px 12px 12px;
+      border-top: 1px solid #d8d2ca;
+    }
+    .character-card-role {
+      display: block;
+      color: #273a73;
+      font-size: 15px;
+      font-weight: 700;
+    }
+    .character-card-epithet {
+      display: block;
+      color: #68616a;
+      font-size: 11px;
+      margin-top: 3px;
+    }
+    .character-select-actions {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 22px;
+    }
+    .character-select-btn {
+      min-width: 150px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 12px 22px;
+      color: #fff;
+      font-family: 'Noto Sans JP', sans-serif;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    #character-confirm-btn {
+      background: linear-gradient(135deg, #4169e1, #6a5acd);
+    }
+    #character-cancel-btn {
+      display: none;
+      background: rgba(255,255,255,0.08);
+      border-color: rgba(255,255,255,0.22);
+    }
+
     /* ========== HUD ========== */
     #hud {
       position: fixed;
@@ -214,13 +325,11 @@
     }
     #hud .player-avatar {
       width: 32px; height: 32px;
-      background: #4169e1;
+      background: #f3f0ec;
       border-radius: 50%;
       border: 2px solid #ffd700;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 16px;
+      object-fit: cover;
+      object-position: 50% 12%;
     }
     #hud .player-name {
       color: #fff;
@@ -230,6 +339,10 @@
     #hud .player-level {
       color: #ffd700;
       font-size: 11px;
+    }
+    #hud .player-class {
+      color: #9fb4df;
+      font-size: 9px;
     }
     #hud .exp-bar-container {
       flex: 1;
@@ -552,6 +665,21 @@
       display: none;
       z-index: 200;
     }
+
+    @media (max-width: 680px) {
+      #character-screen { padding: 20px 12px; }
+      .character-select-inner { min-height: calc(100vh - 40px); }
+      #character-screen h2 { font-size: 20px; }
+      #character-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      .character-card-info { min-height: 56px; padding: 7px 9px 9px; }
+      .character-card-role { font-size: 13px; }
+      .character-card-epithet { font-size: 10px; }
+      .character-select-actions { width: 100%; margin-top: 14px; }
+      .character-select-btn { flex: 1; min-width: 0; }
+      #hud { gap: 8px; padding: 7px 10px; }
+      #hud .exp-label { display: none; }
+      #hud .quest-count { font-size: 10px; }
+    }
   </style>
 </head>
 <body>
@@ -583,16 +711,30 @@
     </div>
   </div>
 
+  <!-- キャラクター選択画面 -->
+  <div id="character-screen">
+    <div class="character-select-inner">
+      <h2 id="character-select-title">冒険者を選ぶ</h2>
+      <div class="character-select-name" id="character-select-name"></div>
+      <div id="character-list"></div>
+      <div class="character-select-actions">
+        <button class="character-select-btn" id="character-cancel-btn">戻る</button>
+        <button class="character-select-btn" id="character-confirm-btn">この冒険者に決める</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ゲーム本体 -->
   <div id="game-container"></div>
 
   <!-- HUD -->
   <div id="hud">
     <div class="player-info">
-      <div class="player-avatar">🧑</div>
+      <img class="player-avatar" id="player-avatar" src="assets/characters/warrior-portrait.webp" alt="">
       <div>
         <div class="player-name">冒険者</div>
         <div class="player-level">Lv.1</div>
+        <div class="player-class" id="player-class">剣士</div>
       </div>
     </div>
     <div class="exp-bar-container">

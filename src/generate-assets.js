@@ -1,3 +1,5 @@
+import { CHARACTERS } from './character-data.js';
+
 /**
  * LPC素材ベースのアセット読み込み
  */
@@ -12,9 +14,11 @@ export function preloadAssets(scene) {
   scene.load.image('building', 'assets/tile-grass2.png');
 
   // プレイヤー walk spritesheet (576x256 = 9 cols x 4 rows, 64x64 per frame)
-  scene.load.spritesheet('hero', 'assets/hero-walk.png', {
-    frameWidth: 64,
-    frameHeight: 64,
+  CHARACTERS.forEach((character) => {
+    scene.load.spritesheet(character.textureKey, character.spriteSheet, {
+      frameWidth: 64,
+      frameHeight: 64,
+    });
   });
 
   // NPC walk spritesheet
@@ -31,48 +35,30 @@ export function createAnimations(scene) {
   // Row 2 (frames 18-26): Down — frame 18 is standing
   // Row 3 (frames 27-35): Right — frame 27 is standing
 
-  // Hero walk animations (frames 1-8 for each direction = walking cycle)
-  scene.anims.create({
-    key: 'hero-walk-up',
-    frames: scene.anims.generateFrameNumbers('hero', { start: 1, end: 8 }),
-    frameRate: 10, repeat: -1,
-  });
-  scene.anims.create({
-    key: 'hero-walk-left',
-    frames: scene.anims.generateFrameNumbers('hero', { start: 10, end: 17 }),
-    frameRate: 10, repeat: -1,
-  });
-  scene.anims.create({
-    key: 'hero-walk-down',
-    frames: scene.anims.generateFrameNumbers('hero', { start: 19, end: 26 }),
-    frameRate: 10, repeat: -1,
-  });
-  scene.anims.create({
-    key: 'hero-walk-right',
-    frames: scene.anims.generateFrameNumbers('hero', { start: 28, end: 35 }),
-    frameRate: 10, repeat: -1,
-  });
+  const directionFrames = {
+    up: { idle: 0, start: 1, end: 8 },
+    left: { idle: 9, start: 10, end: 17 },
+    down: { idle: 18, start: 19, end: 26 },
+    right: { idle: 27, start: 28, end: 35 },
+  };
 
-  // Hero idle (single frame = standing pose from walk sheet)
-  scene.anims.create({
-    key: 'hero-idle-up',
-    frames: [{ key: 'hero', frame: 0 }],
-    frameRate: 1,
-  });
-  scene.anims.create({
-    key: 'hero-idle-left',
-    frames: [{ key: 'hero', frame: 9 }],
-    frameRate: 1,
-  });
-  scene.anims.create({
-    key: 'hero-idle-down',
-    frames: [{ key: 'hero', frame: 18 }],
-    frameRate: 1,
-  });
-  scene.anims.create({
-    key: 'hero-idle-right',
-    frames: [{ key: 'hero', frame: 27 }],
-    frameRate: 1,
+  CHARACTERS.forEach((character) => {
+    Object.entries(directionFrames).forEach(([direction, frames]) => {
+      scene.anims.create({
+        key: `${character.id}-walk-${direction}`,
+        frames: scene.anims.generateFrameNumbers(character.textureKey, {
+          start: frames.start,
+          end: frames.end,
+        }),
+        frameRate: 10,
+        repeat: -1,
+      });
+      scene.anims.create({
+        key: `${character.id}-idle-${direction}`,
+        frames: [{ key: character.textureKey, frame: frames.idle }],
+        frameRate: 1,
+      });
+    });
   });
 
   // NPC idle (down-facing standing)

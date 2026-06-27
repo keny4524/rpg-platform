@@ -3,6 +3,7 @@ import { preloadAssets, createAnimations, generateQuestBoard, generateExclamatio
 import { TILE_SIZE, SCALE, COLLISION_TILES, TILE_TEXTURES, areas, DEFAULT_AREA } from './map-data.js';
 import { quests } from './quest-data.js';
 import { registerPlayer, loginPlayer, loadProgress, saveProgress } from './supabase.js';
+import { CHARACTERS, DEFAULT_CHARACTER_ID, getCharacter } from './character-data.js';
 
 // ========== HTML要素の参照 ==========
 const titleScreen = document.getElementById('title-screen');
@@ -14,6 +15,12 @@ const passwordInput = document.getElementById('password-input');
 const authError = document.getElementById('auth-error');
 const authSubmitBtn = document.getElementById('auth-submit-btn');
 const authToggleBtn = document.getElementById('auth-toggle-btn');
+const characterScreen = document.getElementById('character-screen');
+const characterSelectTitle = document.getElementById('character-select-title');
+const characterSelectName = document.getElementById('character-select-name');
+const characterList = document.getElementById('character-list');
+const characterConfirmBtn = document.getElementById('character-confirm-btn');
+const characterCancelBtn = document.getElementById('character-cancel-btn');
 const hud = document.getElementById('hud');
 const uiOverlay = document.getElementById('ui-overlay');
 const interactBtn = document.getElementById('interact-btn');
@@ -36,6 +43,8 @@ const completeCloseBtn = document.getElementById('complete-close-btn');
 const expBar = document.getElementById('exp-bar');
 const expLabel = document.getElementById('exp-label');
 const questCleared = document.getElementById('quest-cleared');
+const playerAvatar = document.getElementById('player-avatar');
+const playerClass = document.getElementById('player-class');
 
 // ========== ゲーム状態 ==========
 let playerExp = 0;
@@ -46,6 +55,10 @@ let currentPlayerId = null;
 let currentNickname = '';
 let isRegisterMode = true;
 let currentAreaId = DEFAULT_AREA;
+let currentCharacterId = DEFAULT_CHARACTER_ID;
+let pendingCharacterId = DEFAULT_CHARACTER_ID;
+let canCancelCharacterSelection = false;
+let gameInstance = null;
 
 // ========== タイトル画面の星 ==========
 const starsContainer = document.getElementById('stars-container');
@@ -66,6 +79,76 @@ function updateHUD() {
   expLabel.textContent = `EXP ${playerExp}/${expForLevel}`;
   questCleared.textContent = clearedQuests.size;
   document.querySelector('#hud .player-level').textContent = `Lv.${playerLevel}`;
+}
+
+function getCharacterStorageKey() {
+  return `rpg-platform:character:${currentPlayerId}`;
+}
+
+function loadSavedCharacter() {
+  if (!currentPlayerId) return null;
+  const savedId = localStorage.getItem(getCharacterStorageKey());
+  return CHARACTERS.some((character) => character.id === savedId) ? savedId : null;
+}
+
+function saveCurrentCharacter() {
+  if (currentPlayerId) {
+    localStorage.setItem(getCharacterStorageKey(), currentCharacterId);
+  }
+}
+
+function updateCharacterHUD() {
+  const character = getCharacter(currentCharacterId);
+  playerAvatar.src = character.portrait;
+  playerAvatar.alt = character.name;
+  playerClass.textContent = character.name;
+}
+
+function renderCharacterCards() {
+  characterList.innerHTML = '';
+  CHARACTERS.forEach((character) => {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'character-card';
+    card.classList.toggle('selected', character.id === pendingCharacterId);
+    card.setAttribute('aria-pressed', String(character.id === pendingCharacterId));
+    card.innerHTML = `
+      <img src="${character.portrait}" alt="${character.epithet}">
+      <span class="character-card-info">
+        <span class="character-card-role">${character.name}</span>
+        <span class="character-card-epithet">${character.epithet}</span>
+      </span>
+    `;
+    card.addEventListener('click', () => {
+      pendingCharacterId = character.id;
+      renderCharacterCards();
+    });
+    characterList.appendChild(card);
+  });
+}
+
+function openCharacterSelection({ canCancel = false } = {}) {
+  pendingCharacterId = currentCharacterId;
+  canCancelCharacterSelection = canCancel;
+  characterSelectTitle.textContent = canCancel ? '冒険者の姿を変更' : '冒険者を選ぶ';
+  characterSelectName.textContent = currentNickname;
+  characterCancelBtn.style.display = canCancel ? 'block' : 'none';
+  loginScreen.style.display = 'none';
+  characterScreen.style.display = 'block';
+  renderCharacterCards();
+
+  if (sceneRef) {
+    sceneRef.keysDown = {};
+    sceneRef.isCharacterSelectOpen = true;
+  }
+}
+
+function closeCharacterSelection() {
+  characterScreen.style.display = 'none';
+  if (sceneRef) {
+    sceneRef.keysDown = {};
+    sceneRef.isCharacterSelectOpen = false;
+  }
 }
 
 function updateAreaName(name) {
@@ -198,6 +281,7 @@ class RPGScene extends Scene {
     this.questBoardSprite = null;
     this.questExclamation = null;
     this.isTransitioning = false;
+    this.isCharacterSelectOpen = false;
   }
 
   preload() {
@@ -290,7 +374,7 @@ class RPGScene extends Scene {
       this.player = this.add.sprite(
         startX * TILE_SIZE + TILE_SIZE / 2,
         startY * TILE_SIZE + TILE_SIZE / 2,
-        'hero', 18
+        getCharacter(currentCharacterId).textureKey, 18
       ).setDepth(10);
     } else {
       this.player.x = startX * TILE_SIZE + TILE_SIZE / 2;
@@ -338,7 +422,7 @@ class RPGScene extends Scene {
   }
 
   update(time, delta) {
-    if (this.isDialogOpen || this.isQuestUIOpen || this.isTransitioning) return;
+    if (this.isDialogOpen || this.isQuestUIOpen || this.isCharacterSelectOpen || this.isTransitioning) return;
 
     if (this.isMoving) {
       this.moveProgress += delta / this.moveDuration;
@@ -370,16 +454,23 @@ class RPGScene extends Scene {
 
   updatePlayerTexture() {
     if (this.isMoving) {
-      const walkAnim = `hero-walk-${this.facing}`;
+      const walkAnim = `${currentCharacterId}-walk-${this.facing}`;
       if (this.player.anims.currentAnim?.key !== walkAnim) {
         this.player.play(walkAnim);
       }
     } else {
-      const idleAnim = `hero-idle-${this.facing}`;
+      const idleAnim = `${currentCharacterId}-idle-${this.facing}`;
       if (this.player.anims.currentAnim?.key !== idleAnim) {
         this.player.play(idleAnim);
       }
     }
+  }
+
+  applyCharacter() {
+    if (!this.player) return;
+    this.player.stop();
+    this.player.setTexture(getCharacter(currentCharacterId).textureKey, 18);
+    this.updatePlayerTexture();
   }
 
   tryMove(dx, dy) {
@@ -453,6 +544,10 @@ class RPGScene extends Scene {
         // NPC
         for (const npc of this.npcs) {
           if (cx === npc.npcData.x && cy === npc.npcData.y) {
+            if (npc.npcData.action === 'change-character') {
+              openCharacterSelection({ canCancel: true });
+              return;
+            }
             this.isDialogOpen = true;
             dialogName.textContent = npc.npcData.name;
             dialogMessage.textContent = npc.npcData.message;
@@ -468,10 +563,14 @@ class RPGScene extends Scene {
 // ========== ゲーム起動 ==========
 function startGame() {
   loginScreen.style.display = 'none';
+  characterScreen.style.display = 'none';
   hud.style.display = 'flex';
   uiOverlay.style.display = 'block';
   document.querySelector('#hud .player-name').textContent = currentNickname;
+  updateCharacterHUD();
   updateHUD();
+
+  if (gameInstance) return;
 
   const config = {
     type: AUTO,
@@ -484,11 +583,29 @@ function startGame() {
     scale: { mode: Scale.RESIZE, autoCenter: Scale.CENTER_BOTH },
   };
 
-  const game = new Game(config);
+  gameInstance = new Game(config);
   window.addEventListener('resize', () => {
-    game.scale.resize(window.innerWidth, window.innerHeight);
+    gameInstance.scale.resize(window.innerWidth, window.innerHeight);
   });
 }
+
+characterConfirmBtn.addEventListener('click', () => {
+  currentCharacterId = pendingCharacterId;
+  saveCurrentCharacter();
+  updateCharacterHUD();
+
+  if (gameInstance) {
+    sceneRef?.applyCharacter();
+    closeCharacterSelection();
+  } else {
+    closeCharacterSelection();
+    startGame();
+  }
+});
+
+characterCancelBtn.addEventListener('click', () => {
+  if (canCancelCharacterSelection) closeCharacterSelection();
+});
 
 // ========== タイトル → ログイン ==========
 startBtn.addEventListener('click', () => {
@@ -537,6 +654,9 @@ authSubmitBtn.addEventListener('click', async () => {
     }
     currentPlayerId = result.player.id;
     currentNickname = nickname;
+    currentCharacterId = DEFAULT_CHARACTER_ID;
+    openCharacterSelection();
+    return;
   } else {
     const result = await loginPlayer(nickname, password);
     if (result.error) {
@@ -551,6 +671,14 @@ authSubmitBtn.addEventListener('click', async () => {
     playerLevel = progress.level;
     playerExp = progress.exp;
     clearedQuests = new Set(progress.clearedQuests);
+
+    const savedCharacter = loadSavedCharacter();
+    if (!savedCharacter) {
+      currentCharacterId = DEFAULT_CHARACTER_ID;
+      openCharacterSelection();
+      return;
+    }
+    currentCharacterId = savedCharacter;
   }
 
   startGame();

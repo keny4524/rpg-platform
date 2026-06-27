@@ -161,7 +161,7 @@ export const areas = {
     questBoard: { x: 15, y: 6 },
     npcs: [
       { x: 14, y: 4, name: 'ギルドマスター ゴルド', message: '冒険者ギルドへようこそ！\nここは全ての冒険者が\n集まる場所だ。\n仲間と情報を共有しよう。' },
-      { x: 11, y: 13, name: '受付嬢アリア', message: 'クエストの報酬は\nここで受け取れるわ。\nたくさんクリアしてね！' },
+      { x: 11, y: 13, name: '受付嬢アリア', message: '冒険者の姿を変更しますか？', action: 'change-character' },
       { x: 19, y: 13, name: '商人マルコ', message: '装備品が必要かい？\n…って、まだ準備中だ。\nもう少し待ってくれ！' },
     ],
     portals: [
