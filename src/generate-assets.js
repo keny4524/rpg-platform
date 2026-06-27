@@ -13,12 +13,26 @@ export function preloadAssets(scene) {
   scene.load.image('flower', 'assets/tile-flower.png');
   scene.load.image('building', 'assets/tile-grass2.png');
 
+  // High-resolution anime-style tiles for the village trial area.
+  scene.load.image('village-grass', 'assets/environment/village/grass.png');
+  scene.load.image('village-path', 'assets/environment/village/path.png');
+  scene.load.image('village-water', 'assets/environment/village/water.png');
+  scene.load.image('village-trees', 'assets/environment/village/trees.png');
+  scene.load.image('village-flowers', 'assets/environment/village/flowers.png');
+  scene.load.image('village-roof', 'assets/environment/village/roof.png');
+
   // プレイヤー walk spritesheet (576x256 = 9 cols x 4 rows, 64x64 per frame)
   CHARACTERS.forEach((character) => {
     scene.load.spritesheet(character.textureKey, character.spriteSheet, {
-      frameWidth: 64,
-      frameHeight: 64,
+      frameWidth: character.frameWidth || 64,
+      frameHeight: character.frameHeight || 64,
     });
+    if (character.idleSpriteSheet) {
+      scene.load.spritesheet(character.idleTextureKey, character.idleSpriteSheet, {
+        frameWidth: character.frameWidth || 64,
+        frameHeight: character.frameHeight || 64,
+      });
+    }
   });
 
   // NPC walk spritesheet
@@ -35,27 +49,29 @@ export function createAnimations(scene) {
   // Row 2 (frames 18-26): Down — frame 18 is standing
   // Row 3 (frames 27-35): Right — frame 27 is standing
 
-  const directionFrames = {
-    up: { idle: 0, start: 1, end: 8 },
-    left: { idle: 9, start: 10, end: 17 },
-    down: { idle: 18, start: 19, end: 26 },
-    right: { idle: 27, start: 28, end: 35 },
-  };
+  const directionRows = { up: 0, left: 1, down: 2, right: 3 };
 
   CHARACTERS.forEach((character) => {
-    Object.entries(directionFrames).forEach(([direction, frames]) => {
+    const framesPerDirection = character.framesPerDirection || 9;
+    Object.entries(directionRows).forEach(([direction, row]) => {
+      const rowStart = row * framesPerDirection;
+      const idleTextureKey = character.idleTextureKey || character.textureKey;
+      const idleFrame = character.idleTextureKey
+        ? row
+        : rowStart + (character.idleFrameOffset ?? 0);
+      const walkStart = framesPerDirection === 9 ? rowStart + 1 : rowStart;
       scene.anims.create({
         key: `${character.id}-walk-${direction}`,
         frames: scene.anims.generateFrameNumbers(character.textureKey, {
-          start: frames.start,
-          end: frames.end,
+          start: walkStart,
+          end: rowStart + framesPerDirection - 1,
         }),
-        frameRate: 10,
+        frameRate: character.walkFrameRate || 10,
         repeat: -1,
       });
       scene.anims.create({
         key: `${character.id}-idle-${direction}`,
-        frames: [{ key: character.textureKey, frame: frames.idle }],
+        frames: [{ key: idleTextureKey, frame: idleFrame }],
         frameRate: 1,
       });
     });

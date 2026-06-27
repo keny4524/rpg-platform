@@ -16,6 +16,14 @@ export const areas = {
   // --- はじまりの村 ---
   village: {
     name: 'はじまりの村',
+    tileTextures: {
+      0: 'village-grass',
+      1: 'village-path',
+      2: 'village-water',
+      3: 'village-trees',
+      4: 'village-flowers',
+      5: 'village-roof',
+    },
     width: 30,
     height: 20,
     playerStart: { x: 14, y: 10 },

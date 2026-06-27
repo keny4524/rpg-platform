@@ -268,7 +268,7 @@ class RPGScene extends Scene {
     this.moveProgress = 0;
     this.moveFrom = { x: 0, y: 0 };
     this.moveTo = { x: 0, y: 0 };
-    this.moveDuration = 150;
+    this.moveDuration = getCharacter(currentCharacterId).moveDuration || 150;
     this.facing = 'down';
     this.isDialogOpen = false;
     this.isQuestUIOpen = false;
@@ -345,12 +345,14 @@ class RPGScene extends Scene {
       this.collisionMap[y] = [];
       for (let x = 0; x < area.width; x++) {
         const tileType = area.map[y][x];
-        const textureName = TILE_TEXTURES[tileType];
+        const textureName = area.tileTextures?.[tileType] || TILE_TEXTURES[tileType];
         const tile = this.add.image(
           x * TILE_SIZE + TILE_SIZE / 2,
           y * TILE_SIZE + TILE_SIZE / 2,
           textureName
-        ).setDepth(0);
+        )
+          .setDepth(0)
+          .setDisplaySize(TILE_SIZE, TILE_SIZE);
         this.mapSprites.push(tile);
         this.collisionMap[y][x] = COLLISION_TILES.includes(tileType);
       }
@@ -371,11 +373,14 @@ class RPGScene extends Scene {
     const startY = spawnY !== undefined ? spawnY : area.playerStart.y;
 
     if (!this.player) {
+      const selectedCharacter = getCharacter(currentCharacterId);
       this.player = this.add.sprite(
         startX * TILE_SIZE + TILE_SIZE / 2,
         startY * TILE_SIZE + TILE_SIZE / 2,
-        getCharacter(currentCharacterId).textureKey, 18
-      ).setDepth(10);
+        selectedCharacter.textureKey, 0
+      )
+        .setDepth(10)
+        .setDisplaySize(selectedCharacter.displayWidth || 64, selectedCharacter.displayHeight || 64);
     } else {
       this.player.x = startX * TILE_SIZE + TILE_SIZE / 2;
       this.player.y = startY * TILE_SIZE + TILE_SIZE / 2;
@@ -430,7 +435,6 @@ class RPGScene extends Scene {
         this.isMoving = false;
         this.player.x = this.moveTo.x;
         this.player.y = this.moveTo.y;
-        this.updatePlayerTexture();
         // ポータルチェック
         this.checkPortal();
       } else {
@@ -448,8 +452,11 @@ class RPGScene extends Scene {
     else if (keys['ArrowUp'] || keys['KeyW']) { dy = -1; this.facing = 'up'; }
     else if (keys['ArrowDown'] || keys['KeyS']) { dy = 1; this.facing = 'down'; }
 
-    this.updatePlayerTexture();
-    if (dx !== 0 || dy !== 0) this.tryMove(dx, dy);
+    if (dx !== 0 || dy !== 0) {
+      this.tryMove(dx, dy);
+    } else {
+      this.updatePlayerTexture();
+    }
   }
 
   updatePlayerTexture() {
@@ -468,8 +475,11 @@ class RPGScene extends Scene {
 
   applyCharacter() {
     if (!this.player) return;
+    const selectedCharacter = getCharacter(currentCharacterId);
     this.player.stop();
-    this.player.setTexture(getCharacter(currentCharacterId).textureKey, 18);
+    this.player.setTexture(selectedCharacter.textureKey, 0);
+    this.player.setDisplaySize(selectedCharacter.displayWidth || 64, selectedCharacter.displayHeight || 64);
+    this.moveDuration = selectedCharacter.moveDuration || 150;
     this.updatePlayerTexture();
   }
 
@@ -490,6 +500,7 @@ class RPGScene extends Scene {
       this.player.tileY = ny;
       this.moveTo.x = nx * TILE_SIZE + TILE_SIZE / 2;
       this.moveTo.y = ny * TILE_SIZE + TILE_SIZE / 2;
+      this.updatePlayerTexture();
       return;
     }
 
@@ -504,6 +515,7 @@ class RPGScene extends Scene {
     this.player.tileY = ny;
     this.moveTo.x = nx * TILE_SIZE + TILE_SIZE / 2;
     this.moveTo.y = ny * TILE_SIZE + TILE_SIZE / 2;
+    this.updatePlayerTexture();
   }
 
   checkPortal() {
@@ -577,7 +589,7 @@ function startGame() {
     parent: 'game-container',
     width: window.innerWidth,
     height: window.innerHeight,
-    pixelArt: true,
+    pixelArt: false,
     backgroundColor: '#1a1a2e',
     scene: [RPGScene],
     scale: { mode: Scale.RESIZE, autoCenter: Scale.CENTER_BOTH },
