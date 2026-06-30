@@ -4,6 +4,7 @@ import { TILE_SIZE, SCALE, COLLISION_TILES, TILE_TEXTURES, areas, DEFAULT_AREA }
 import { quests } from './quest-data.js';
 import { registerPlayer, loginPlayer, loadProgress, saveProgress } from './supabase.js';
 import { CHARACTERS, DEFAULT_CHARACTER_ID, getCharacter } from './character-data.js';
+import { MultiplayerSession } from './multiplayer.js';
 
 // ========== HTML要素の参照 ==========
 const titleScreen = document.getElementById('title-screen');
@@ -24,6 +25,9 @@ const characterCancelBtn = document.getElementById('character-cancel-btn');
 const hud = document.getElementById('hud');
 const uiOverlay = document.getElementById('ui-overlay');
 const interactBtn = document.getElementById('interact-btn');
+const socialBtn = document.getElementById('social-btn');
+const socialMenu = document.getElementById('social-menu');
+const socialOptions = document.querySelectorAll('.social-option');
 const mobileMoveButtons = document.querySelectorAll('.mobile-move-btn');
 const controlsHint = document.getElementById('controls-hint');
 const debugInfo = document.getElementById('debug-info');
@@ -46,6 +50,8 @@ const expLabel = document.getElementById('exp-label');
 const questCleared = document.getElementById('quest-cleared');
 const playerAvatar = document.getElementById('player-avatar');
 const playerClass = document.getElementById('player-class');
+const sessionReplacedPanel = document.getElementById('session-replaced-panel');
+const sessionReloadBtn = document.getElementById('session-reload-btn');
 
 // ========== ゲーム状態 ==========
 let playerExp = 0;
@@ -247,9 +253,11 @@ function closeAllUI() {
   questDetail.style.display = 'none';
   questComplete.style.display = 'none';
   questCompleteOverlay.style.display = 'none';
+  socialMenu.classList.remove('is-open');
   if (sceneRef) {
     sceneRef.isDialogOpen = false;
     sceneRef.isQuestUIOpen = false;
+    sceneRef.isSocialMenuOpen = false;
   }
 }
 
@@ -258,6 +266,32 @@ dialogBox.addEventListener('click', closeAllUI);
 completeCloseBtn.addEventListener('click', closeAllUI);
 questCompleteOverlay.addEventListener('click', closeAllUI);
 document.getElementById('quest-close-hint').addEventListener('click', closeAllUI);
+socialBtn.addEventListener('click', (event) => {
+  event.stopPropagation();
+  const willOpen = !socialMenu.classList.contains('is-open');
+  socialMenu.classList.toggle('is-open', willOpen);
+  socialBtn.setAttribute('aria-expanded', String(willOpen));
+  if (sceneRef) {
+    sceneRef.keysDown = {};
+    sceneRef.isSocialMenuOpen = willOpen;
+  }
+});
+socialOptions.forEach((option) => {
+  option.addEventListener('click', () => {
+    sceneRef?.sendSocialMessage(option.dataset.message);
+    socialMenu.classList.remove('is-open');
+    socialBtn.setAttribute('aria-expanded', 'false');
+    if (sceneRef) sceneRef.isSocialMenuOpen = false;
+  });
+});
+document.addEventListener('click', (event) => {
+  if (!socialMenu.contains(event.target) && event.target !== socialBtn) {
+    socialMenu.classList.remove('is-open');
+    socialBtn.setAttribute('aria-expanded', 'false');
+    if (sceneRef) sceneRef.isSocialMenuOpen = false;
+  }
+});
+sessionReloadBtn.addEventListener('click', () => window.location.reload());
 
 // ========== Phaser シーン ==========
 class RPGScene extends Scene {
@@ -283,6 +317,12 @@ class RPGScene extends Scene {
     this.questExclamation = null;
     this.isTransitioning = false;
     this.isCharacterSelectOpen = false;
+    this.isSocialMenuOpen = false;
+    this.sessionReplaced = false;
+    this.multiplayer = null;
+    this.remotePlayers = new Map();
+    this.localNameLabel = null;
+    this.localBubble = null;
   }
 
   preload() {
@@ -297,6 +337,21 @@ class RPGScene extends Scene {
 
     // エリアをロード
     this.loadArea(currentAreaId);
+    this.localNameLabel = this.createNameLabel(currentNickname);
+    this.localBubble = this.createSpeechBubble();
+
+    this.multiplayer = new MultiplayerSession({
+      playerId: currentPlayerId,
+      nickname: currentNickname,
+      getState: () => this.getNetworkState(),
+      onPresenceSync: players => this.reconcileRemotePlayers(players),
+      onPlayerState: player => this.upsertRemotePlayer(player),
+      onPlayerMove: movement => this.moveRemotePlayer(movement),
+      onSocialMessage: payload => this.showRemoteMessage(payload),
+      onSessionReplaced: () => this.handleSessionReplaced(),
+      onStatusChange: status => socialBtn?.classList.toggle('is-offline', status !== 'SUBSCRIBED'),
+    });
+    this.multiplayer.joinArea(currentAreaId);
 
     const clearMovementInput = () => {
       this.keysDown = {};
@@ -340,6 +395,7 @@ class RPGScene extends Scene {
     });
 
     interactBtn.addEventListener('click', () => this.onInteract());
+    window.addEventListener('beforeunload', () => this.multiplayer?.destroy(), { once: true });
 
     setTimeout(() => {
       controlsHint.style.opacity = '0';
@@ -356,6 +412,7 @@ class RPGScene extends Scene {
 
     currentAreaId = areaId;
     this.currentArea = area;
+    this.clearRemotePlayers();
 
     // 既存スプライトをクリア
     this.mapSprites.forEach(s => s.destroy());
@@ -451,10 +508,13 @@ class RPGScene extends Scene {
     this.isTransitioning = false;
     this.isMoving = false;
     this.updatePlayerTexture();
+    if (this.multiplayer) this.multiplayer.joinArea(areaId);
   }
 
   update(time, delta) {
-    if (this.isDialogOpen || this.isQuestUIOpen || this.isCharacterSelectOpen || this.isTransitioning) return;
+    this.updateMultiplayerVisuals();
+    if (this.sessionReplaced || this.isDialogOpen || this.isQuestUIOpen
+      || this.isCharacterSelectOpen || this.isSocialMenuOpen || this.isTransitioning) return;
 
     if (this.isMoving) {
       this.moveProgress += delta / this.moveDuration;
@@ -508,6 +568,7 @@ class RPGScene extends Scene {
     this.player.setDisplaySize(selectedCharacter.displayWidth || 64, selectedCharacter.displayHeight || 64);
     this.moveDuration = selectedCharacter.moveDuration || 150;
     this.updatePlayerTexture();
+    this.multiplayer?.announceState();
   }
 
   tryMove(dx, dy) {
@@ -528,6 +589,7 @@ class RPGScene extends Scene {
       this.moveTo.x = nx * TILE_SIZE + TILE_SIZE / 2;
       this.moveTo.y = ny * TILE_SIZE + TILE_SIZE / 2;
       this.updatePlayerTexture();
+      this.broadcastMovement();
       return;
     }
 
@@ -543,6 +605,219 @@ class RPGScene extends Scene {
     this.moveTo.x = nx * TILE_SIZE + TILE_SIZE / 2;
     this.moveTo.y = ny * TILE_SIZE + TILE_SIZE / 2;
     this.updatePlayerTexture();
+    this.broadcastMovement();
+  }
+
+  getNetworkState() {
+    return {
+      characterId: currentCharacterId,
+      x: this.player?.x ?? 0,
+      y: this.player?.y ?? 0,
+      tileX: this.player?.tileX ?? 0,
+      tileY: this.player?.tileY ?? 0,
+      facing: this.facing,
+    };
+  }
+
+  broadcastMovement() {
+    this.multiplayer?.sendMove({
+      characterId: currentCharacterId,
+      fromX: this.moveFrom.x,
+      fromY: this.moveFrom.y,
+      toX: this.moveTo.x,
+      toY: this.moveTo.y,
+      tileX: this.player.tileX,
+      tileY: this.player.tileY,
+      facing: this.facing,
+      duration: this.moveDuration,
+    });
+  }
+
+  createNameLabel(nickname) {
+    return this.add.text(0, 0, nickname, {
+      fontFamily: 'Noto Sans JP, sans-serif',
+      fontSize: '10px',
+      color: '#ffffff',
+      stroke: '#111827',
+      strokeThickness: 3,
+      align: 'center',
+    }).setOrigin(0.5, 1).setDepth(31);
+  }
+
+  createSpeechBubble() {
+    const background = this.add.graphics();
+    const text = this.add.text(0, 0, '', {
+      fontFamily: 'Noto Sans JP, sans-serif',
+      fontSize: '11px',
+      color: '#17202a',
+      align: 'center',
+      wordWrap: { width: 132, useAdvancedWrap: true },
+    }).setOrigin(0.5, 1);
+    const container = this.add.container(0, 0, [background, text])
+      .setDepth(40)
+      .setVisible(false);
+
+    return { background, text, container, timer: null };
+  }
+
+  setSpeechBubble(bubble, message) {
+    if (!bubble) return;
+    bubble.timer?.remove(false);
+    bubble.text.setText(message);
+
+    const width = bubble.text.width + 18;
+    const height = bubble.text.height + 12;
+    bubble.background.clear();
+    bubble.background.fillStyle(0xffffff, 0.96);
+    bubble.background.lineStyle(1.5, 0x243449, 0.8);
+    bubble.background.fillRoundedRect(-width / 2, -height, width, height, 6);
+    bubble.background.strokeRoundedRect(-width / 2, -height, width, height, 6);
+    bubble.background.fillTriangle(-5, 0, 5, 0, 0, 7);
+    bubble.container.setVisible(true);
+    bubble.timer = this.time.delayedCall(10000, () => {
+      bubble.container.setVisible(false);
+      bubble.timer = null;
+    });
+  }
+
+  upsertRemotePlayer(state, { preservePosition = false } = {}) {
+    const playerId = String(state.playerId);
+    if (!playerId || playerId === String(currentPlayerId)) return null;
+
+    const character = getCharacter(state.characterId);
+    let entry = this.remotePlayers.get(playerId);
+    if (entry && entry.characterId !== character.id) {
+      this.removeRemotePlayer(playerId);
+      entry = null;
+    }
+
+    if (!entry) {
+      const sprite = this.add.sprite(
+        Number(state.x) || 0,
+        Number(state.y) || 0,
+        character.textureKey,
+        0
+      )
+        .setDepth(9)
+        .setDisplaySize(character.displayWidth || 64, character.displayHeight || 64);
+      entry = {
+        playerId,
+        characterId: character.id,
+        sprite,
+        nameLabel: this.createNameLabel(state.nickname || '冒険者'),
+        bubble: this.createSpeechBubble(),
+        moveTween: null,
+        facing: state.facing || 'down',
+      };
+      this.remotePlayers.set(playerId, entry);
+    } else {
+      entry.nameLabel.setText(state.nickname || '冒険者');
+      if (!preservePosition && Number.isFinite(Number(state.x)) && Number.isFinite(Number(state.y))) {
+        entry.moveTween?.stop();
+        entry.sprite.setPosition(Number(state.x), Number(state.y));
+      }
+    }
+
+    entry.sprite.tileX = Number(state.tileX) || 0;
+    entry.sprite.tileY = Number(state.tileY) || 0;
+    entry.facing = state.facing || entry.facing;
+    if (!entry.moveTween?.isPlaying()) this.playRemoteIdle(entry);
+    return entry;
+  }
+
+  reconcileRemotePlayers(players) {
+    const activeIds = new Set(players.map(player => String(player.playerId)));
+    players.forEach(player => this.upsertRemotePlayer(player, { preservePosition: true }));
+    [...this.remotePlayers.keys()].forEach((playerId) => {
+      if (!activeIds.has(playerId)) this.removeRemotePlayer(playerId);
+    });
+  }
+
+  moveRemotePlayer(movement) {
+    const entry = this.upsertRemotePlayer({
+      ...movement,
+      x: movement.fromX,
+      y: movement.fromY,
+    }, { preservePosition: true });
+    if (!entry) return;
+
+    entry.moveTween?.stop();
+    entry.facing = movement.facing || entry.facing;
+    entry.sprite.tileX = Number(movement.tileX) || 0;
+    entry.sprite.tileY = Number(movement.tileY) || 0;
+    const walkAnimation = `${entry.characterId}-walk-${entry.facing}`;
+    if (this.anims.exists(walkAnimation)) entry.sprite.play(walkAnimation, true);
+
+    const tween = this.tweens.add({
+      targets: entry.sprite,
+      x: Number(movement.toX),
+      y: Number(movement.toY),
+      duration: Math.max(80, Number(movement.duration) || 280),
+      ease: 'Linear',
+      onComplete: () => {
+        if (entry.moveTween !== tween) return;
+        entry.moveTween = null;
+        this.playRemoteIdle(entry);
+      },
+    });
+    entry.moveTween = tween;
+  }
+
+  playRemoteIdle(entry) {
+    const idleAnimation = `${entry.characterId}-idle-${entry.facing}`;
+    if (this.anims.exists(idleAnimation)) entry.sprite.play(idleAnimation, true);
+  }
+
+  showRemoteMessage(payload) {
+    const entry = this.upsertRemotePlayer(payload, { preservePosition: true });
+    if (entry) this.setSpeechBubble(entry.bubble, payload.message);
+  }
+
+  sendSocialMessage(message) {
+    if (!message || this.sessionReplaced) return;
+    this.setSpeechBubble(this.localBubble, message);
+    this.multiplayer?.sendSocialMessage(message);
+  }
+
+  updateMultiplayerVisuals() {
+    if (this.player && this.localNameLabel) {
+      const character = getCharacter(currentCharacterId);
+      const offset = (character.displayHeight || 64) / 2;
+      this.localNameLabel.setPosition(this.player.x, this.player.y - offset - 2);
+      this.localBubble?.container.setPosition(this.player.x, this.player.y - offset - 22);
+    }
+
+    this.remotePlayers.forEach((entry) => {
+      const character = getCharacter(entry.characterId);
+      const offset = (character.displayHeight || 64) / 2;
+      entry.nameLabel.setPosition(entry.sprite.x, entry.sprite.y - offset - 2);
+      entry.bubble.container.setPosition(entry.sprite.x, entry.sprite.y - offset - 22);
+    });
+  }
+
+  removeRemotePlayer(playerId) {
+    const entry = this.remotePlayers.get(String(playerId));
+    if (!entry) return;
+    entry.moveTween?.stop();
+    entry.bubble.timer?.remove(false);
+    entry.sprite.destroy();
+    entry.nameLabel.destroy();
+    entry.bubble.container.destroy(true);
+    this.remotePlayers.delete(String(playerId));
+  }
+
+  clearRemotePlayers() {
+    [...this.remotePlayers.keys()].forEach(playerId => this.removeRemotePlayer(playerId));
+  }
+
+  handleSessionReplaced() {
+    this.sessionReplaced = true;
+    this.keysDown = {};
+    this.isSocialMenuOpen = false;
+    socialMenu.classList.remove('is-open');
+    socialBtn.setAttribute('aria-expanded', 'false');
+    this.clearRemotePlayers();
+    sessionReplacedPanel.style.display = 'flex';
   }
 
   checkPortal() {
@@ -677,7 +952,11 @@ authSubmitBtn.addEventListener('click', async () => {
   const password = passwordInput.value;
 
   if (!nickname) { authError.textContent = 'ニックネームを入力してください'; return; }
-  if (password.length < 4) { authError.textContent = 'パスワードは4文字以上にしてください'; return; }
+  const minimumPasswordLength = isRegisterMode ? 8 : 4;
+  if (password.length < minimumPasswordLength) {
+    authError.textContent = `パスワードは${minimumPasswordLength}文字以上にしてください`;
+    return;
+  }
 
   authSubmitBtn.disabled = true;
   authSubmitBtn.textContent = '接続中...';

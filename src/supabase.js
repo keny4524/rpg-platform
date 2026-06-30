@@ -5,68 +5,57 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// パスワードをハッシュ化（簡易版 — デモ用）
-async function hashPassword(password) {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password + 'rpg-platform-salt');
-  const hash = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+async function ensureAuthenticatedSession() {
+  const { data: current } = await supabase.auth.getSession();
+  let session = current.session;
+
+  if (!session) {
+    const { data, error } = await supabase.auth.signInAnonymously();
+    if (error || !data.session) {
+      return { error: '安全な接続を開始できませんでした' };
+    }
+    session = data.session;
+  }
+
+  await supabase.realtime.setAuth(session.access_token);
+  return { session };
 }
 
 // ========== ユーザー登録 ==========
 export async function registerPlayer(nickname, password) {
-  const passwordHash = await hashPassword(password);
+  const auth = await ensureAuthenticatedSession();
+  if (auth.error) return auth;
 
-  // ニックネームの重複チェック
-  const { data: existing } = await supabase
-    .from('players')
-    .select('id')
-    .eq('nickname', nickname)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc('register_player_secure', {
+    p_nickname: nickname,
+    p_password: password,
+  });
 
-  if (existing) {
-    return { error: 'この名前はもう使われています' };
+  if (error) {
+    const message = error.message?.includes('nickname_taken')
+      ? 'この名前はもう使われています'
+      : '登録に失敗しました';
+    return { error: message };
   }
 
-  // プレイヤー作成
-  const { data: player, error: playerError } = await supabase
-    .from('players')
-    .insert({ nickname, password_hash: passwordHash })
-    .select()
-    .single();
-
-  if (playerError) {
-    return { error: '登録に失敗しました' };
-  }
-
-  // 進捗データ作成
-  const { error: progressError } = await supabase
-    .from('progress')
-    .insert({ player_id: player.id });
-
-  if (progressError) {
-    return { error: '進捗データの作成に失敗しました' };
-  }
-
-  return { player };
+  return { player: data?.[0] };
 }
 
 // ========== ログイン ==========
 export async function loginPlayer(nickname, password) {
-  const passwordHash = await hashPassword(password);
+  const auth = await ensureAuthenticatedSession();
+  if (auth.error) return auth;
 
-  const { data: player, error } = await supabase
-    .from('players')
-    .select('*')
-    .eq('nickname', nickname)
-    .eq('password_hash', passwordHash)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc('login_player_secure', {
+    p_nickname: nickname,
+    p_password: password,
+  });
 
-  if (!player) {
+  if (error || !data?.[0]) {
     return { error: '名前かパスワードが違います' };
   }
 
-  return { player };
+  return { player: data[0] };
 }
 
 // ========== 進捗読み込み ==========

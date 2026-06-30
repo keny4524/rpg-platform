@@ -411,6 +411,92 @@
     #interact-btn:active {
       transform: scale(0.9);
     }
+    #social-btn {
+      pointer-events: auto;
+      position: fixed;
+      right: 28px;
+      bottom: 98px;
+      width: 56px;
+      height: 56px;
+      border: 2px solid rgba(255,255,255,0.5);
+      border-radius: 50%;
+      background: rgba(22, 84, 72, 0.92);
+      color: #fff;
+      font-size: 25px;
+      line-height: 1;
+      cursor: pointer;
+      box-shadow: 0 3px 12px rgba(0,0,0,0.35);
+      z-index: 202;
+      transition: transform 0.15s, opacity 0.2s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #social-btn:active { transform: scale(0.9); }
+    #social-btn.is-offline { opacity: 0.65; }
+    #social-menu {
+      pointer-events: auto;
+      position: fixed;
+      right: 24px;
+      bottom: 164px;
+      width: min(240px, calc(100vw - 32px));
+      display: none;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      padding: 10px;
+      border: 1px solid rgba(255,255,255,0.28);
+      border-radius: 8px;
+      background: rgba(10, 18, 30, 0.96);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      z-index: 203;
+    }
+    #social-menu.is-open { display: grid; }
+    .social-option {
+      min-width: 0;
+      min-height: 42px;
+      padding: 8px 6px;
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 6px;
+      background: rgba(255,255,255,0.09);
+      color: #fff;
+      font-family: 'Noto Sans JP', sans-serif;
+      font-size: 12px;
+      line-height: 1.35;
+      cursor: pointer;
+    }
+    .social-option:active { background: rgba(52, 152, 130, 0.55); }
+    #session-replaced-panel {
+      pointer-events: auto;
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(4, 9, 18, 0.78);
+      z-index: 500;
+    }
+    .session-replaced-dialog {
+      width: min(100%, 360px);
+      padding: 22px;
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 8px;
+      background: #111c2c;
+      color: #fff;
+      text-align: center;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.45);
+    }
+    .session-replaced-dialog h2 { margin-bottom: 10px; font-size: 18px; }
+    .session-replaced-dialog p { margin-bottom: 18px; color: #cbd5e1; font-size: 13px; line-height: 1.7; }
+    #session-reload-btn {
+      min-height: 44px;
+      padding: 10px 18px;
+      border: 0;
+      border-radius: 6px;
+      background: #2f806f;
+      color: #fff;
+      font-family: 'Noto Sans JP', sans-serif;
+      font-weight: 700;
+      cursor: pointer;
+    }
     #mobile-controls {
       pointer-events: auto;
       position: fixed;
@@ -734,6 +820,16 @@
         width: 72px;
         height: 72px;
       }
+      #social-btn {
+        right: max(25px, calc(env(safe-area-inset-right) + 7px));
+        bottom: max(106px, calc(env(safe-area-inset-bottom) + 106px));
+        width: 58px;
+        height: 58px;
+      }
+      #social-menu {
+        right: max(14px, env(safe-area-inset-right));
+        bottom: max(172px, calc(env(safe-area-inset-bottom) + 172px));
+      }
       #controls-hint { display: none; }
     }
     @media (max-width: 900px) and (max-height: 500px),
@@ -752,6 +848,16 @@
       #interact-btn {
         width: 62px;
         height: 62px;
+      }
+      #social-btn {
+        right: max(24px, env(safe-area-inset-right));
+        bottom: max(92px, calc(env(safe-area-inset-bottom) + 92px));
+        width: 50px;
+        height: 50px;
+        font-size: 21px;
+      }
+      #social-menu {
+        bottom: max(148px, calc(env(safe-area-inset-bottom) + 148px));
       }
     }
   </style>
@@ -776,7 +882,7 @@
     <h2 id="auth-title">冒険者登録</h2>
     <div class="auth-form">
       <input type="text" class="auth-input" id="nickname-input" placeholder="ニックネーム" maxlength="20" autocomplete="off">
-      <input type="password" class="auth-input" id="password-input" placeholder="パスワード（4文字以上）" minlength="4" autocomplete="off">
+      <input type="password" class="auth-input" id="password-input" placeholder="パスワード（新規登録は8文字以上）" minlength="4" autocomplete="off">
       <div id="auth-error"></div>
       <button class="auth-btn primary" id="auth-submit-btn">登録してはじめる</button>
       <div class="auth-divider">または</div>
@@ -828,6 +934,15 @@
       <button type="button" class="mobile-move-btn" data-key="ArrowDown" aria-label="下へ移動">▼</button>
     </div>
     <button id="interact-btn">調べる</button>
+    <button type="button" id="social-btn" aria-label="交流メニュー" aria-expanded="false" title="交流">💬</button>
+    <div id="social-menu" aria-label="定型メッセージ">
+      <button type="button" class="social-option" data-message="こんにちは！">こんにちは！</button>
+      <button type="button" class="social-option" data-message="一緒に行こう">一緒に行こう</button>
+      <button type="button" class="social-option" data-message="ありがとう！">ありがとう！</button>
+      <button type="button" class="social-option" data-message="やった！">やった！</button>
+      <button type="button" class="social-option" data-message="👍" aria-label="いいね">👍</button>
+      <button type="button" class="social-option" data-message="✨" aria-label="きらきら">✨</button>
+    </div>
     <div id="controls-hint">矢印キーで移動 ／ 「調べる」 or スペースキーで調べる</div>
     <div id="debug-info"></div>
 
@@ -862,6 +977,14 @@
       <div class="complete-text">QUEST CLEAR!</div>
       <div class="complete-exp" id="complete-exp-text">+30 EXP</div>
       <button class="complete-btn" id="complete-close-btn">OK</button>
+    </div>
+
+    <div id="session-replaced-panel" role="dialog" aria-modal="true" aria-labelledby="session-replaced-title">
+      <div class="session-replaced-dialog">
+        <h2 id="session-replaced-title">別の端末でログインしました</h2>
+        <p>この画面での操作を終了しました。続ける場合は、もう一度ログインしてください。</p>
+        <button type="button" id="session-reload-btn">ログイン画面へ戻る</button>
+      </div>
     </div>
   </div>
 
