@@ -24,6 +24,7 @@ const characterCancelBtn = document.getElementById('character-cancel-btn');
 const hud = document.getElementById('hud');
 const uiOverlay = document.getElementById('ui-overlay');
 const interactBtn = document.getElementById('interact-btn');
+const mobileMoveButtons = document.querySelectorAll('.mobile-move-btn');
 const controlsHint = document.getElementById('controls-hint');
 const debugInfo = document.getElementById('debug-info');
 const dialogBox = document.getElementById('dialog-box');
@@ -297,6 +298,11 @@ class RPGScene extends Scene {
     // エリアをロード
     this.loadArea(currentAreaId);
 
+    const clearMovementInput = () => {
+      this.keysDown = {};
+      mobileMoveButtons.forEach(button => button.classList.remove('is-pressed'));
+    };
+
     // キーボード入力
     window.addEventListener('keydown', (e) => {
       this.keysDown[e.code] = true;
@@ -308,8 +314,29 @@ class RPGScene extends Scene {
     window.addEventListener('keyup', (e) => {
       this.keysDown[e.code] = false;
     });
-    window.addEventListener('blur', () => {
-      this.keysDown = {};
+    window.addEventListener('blur', clearMovementInput);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) clearMovementInput();
+    });
+
+    mobileMoveButtons.forEach((button) => {
+      const keyCode = button.dataset.key;
+      const release = (event) => {
+        event.preventDefault();
+        this.keysDown[keyCode] = false;
+        button.classList.remove('is-pressed');
+      };
+
+      button.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        button.setPointerCapture?.(event.pointerId);
+        this.keysDown[keyCode] = true;
+        button.classList.add('is-pressed');
+      });
+      button.addEventListener('pointerup', release);
+      button.addEventListener('pointercancel', release);
+      button.addEventListener('lostpointercapture', release);
+      button.addEventListener('contextmenu', event => event.preventDefault());
     });
 
     interactBtn.addEventListener('click', () => this.onInteract());
